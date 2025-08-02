@@ -297,6 +297,14 @@ func setupRoutes(db *gorm.DB, redisClient *redis.Client, r2Client *media.R2Clien
 			mediaRoutes.GET("/artifact/:type", mediaHandler.GetArtifactImage)
 		}
 		log.Println("✅ Media routes registered: /api/v1/media/*")
+
+		// Public media routes for Flutter Image.network()
+		publicMediaRoutes := v1.Group("/public/media")
+		{
+			publicMediaRoutes.GET("/artifact/:type", mediaHandler.GetArtifactImage)
+			publicMediaRoutes.GET("/image/:filename", mediaHandler.GetImage)
+		}
+		log.Println("✅ Public media routes registered: /api/v1/public/media/*")
 	}
 
 	// ==========================================

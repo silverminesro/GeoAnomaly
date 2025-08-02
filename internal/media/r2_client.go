@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -55,6 +56,15 @@ func (r *R2Client) GetObject(ctx context.Context, key string) (io.ReadCloser, st
 	contentType := "image/jpeg" // default
 	if output.ContentType != nil {
 		contentType = *output.ContentType
+	} else {
+		// Detect content type from file extension if not provided
+		if strings.HasSuffix(strings.ToLower(key), ".png") {
+			contentType = "image/png"
+		} else if strings.HasSuffix(strings.ToLower(key), ".webp") {
+			contentType = "image/webp"
+		} else if strings.HasSuffix(strings.ToLower(key), ".gif") {
+			contentType = "image/gif"
+		}
 	}
 
 	return output.Body, contentType, nil
