@@ -98,7 +98,7 @@ func main() {
 	accountID := getEnvVar("R2_ACCOUNT_ID", "")
 	accessKeyID := getEnvVar("R2_ACCESS_KEY_ID", "")
 	secretAccessKey := getEnvVar("R2_SECRET_ACCESS_KEY", "")
-	bucketName := getEnvVar("R2_BUCKET_NAME", "geoanomaly-artifacts")
+	bucketName := getEnvVar("R2_BUCKET_NAME", "geoanomaly")
 
 	log.Printf("🔑 R2_ACCOUNT_ID: %s", accountID)
 	log.Printf("🔑 R2_ACCESS_KEY_ID: %s", accessKeyID)
