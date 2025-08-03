@@ -78,6 +78,82 @@ func GetArtifactDisplayName(artifactType string) string {
 	return artifactType
 }
 
+// Get artifact image filename
+func GetArtifactImageFilename(artifactType string) string {
+	imageMap := map[string]string{
+		// Forest artifacts
+		"mushroom_sample":        "mutant_mushroom_sample.jpg",
+		"mutant_mushroom_sample": "mutant_mushroom_sample.jpg", // ✅ Pridané pre kompatibilitu
+		"tree_resin":             "amber_tree_resin.jpg",
+		"amber_tree_resin":       "amber_tree_resin.jpg", // ✅ Pridané pre kompatibilitu
+		"animal_bones":           "predator_bones.jpg",
+		"herbal_extract":         "herbal_extract.jpg",
+		"dewdrop_pearl":          "dewdrop_pearl.jpg",
+
+		// Mountain artifacts
+		"mineral_ore":          "rare_mineral_ore.jpg",
+		"crystal_shard":        "energy_crystal_shard.jpg",
+		"energy_crystal_shard": "energy_crystal_shard.jpg", // ✅ Pridané pre kompatibilitu
+		"stone_tablet":         "ancient_stone_tablet.jpg",
+		"ancient_stone_tablet": "ancient_stone_tablet.jpg", // ✅ Pridané pre kompatibilitu
+		"mountain_herb":        "alpine_medicinal_herb.jpg",
+		"ice_crystal":          "frozen_ice_crystal.jpg",
+		"frozen_ice_crystal":   "frozen_ice_crystal.jpg", // ✅ Pridané pre kompatibilitu
+
+		// Industrial artifacts
+		"rusty_gear":           "rusty_gear_relic.jpg",
+		"chemical_sample":      "unknown_chemical_sample.jpg",
+		"machinery_parts":      "industrial_machinery_parts.jpg",
+		"electronic_component": "advanced_electronic_component.jpg",
+		"toxic_waste":          "toxic_waste_container.jpg",
+
+		// Urban artifacts
+		"old_documents":         "pre_war_documents.jpg",
+		"medical_supplies":      "medical_emergency_kit.jpg",
+		"medical_emergency_kit": "medical_emergency_kit.jpg", // ✅ Pridané pre kompatibilitu
+		"electronics":           "salvaged_electronics.jpg",
+		"urban_artifact":        "city_historical_artifact.jpg",
+		"pocket_radio":          "pocket_radio_receiver.jpg",
+		"pocket_radio_receiver": "pocket_radio_receiver.jpg", // ✅ Pridané pre kompatibilitu
+
+		// Water artifacts
+		"water_sample":   "contaminated_water_sample.jpg",
+		"aquatic_plant":  "mutant_aquatic_plant.jpg",
+		"filtered_water": "purified_water_container.jpg",
+		"abyss_pearl":    "abyss_pearl.jpg",
+		"algae_biomass":  "toxic_algae_biomass.jpg",
+
+		// Radioactive artifacts
+		"uranium_ore":        "uranium_ore_fragment.jpg",
+		"radiation_detector": "geiger_counter_device.jpg",
+		"contaminated_soil":  "radioactive_soil_sample.jpg",
+		"atomic_battery":     "nuclear_battery_cell.jpg",
+		"nuclear_fuel":       "spent_nuclear_fuel.jpg",
+
+		// Radioactive exclusive
+		"plutonium_core":   "plutonium_reactor_core.jpg",
+		"reactor_fragment": "reactor_core_fragment.jpg",
+		"control_rod":      "nuclear_control_rod.jpg",
+
+		// Chemical artifacts
+		"chemical_compound": "experimental_chemical_compound.jpg",
+		"lab_equipment":     "laboratory_equipment.jpg",
+		"toxic_sample":      "hazardous_toxic_sample.jpg",
+		"hazmat_suit":       "professional_hazmat_suit.jpg",
+		"catalyst":          "chemical_catalyst.jpg",
+
+		// Chemical exclusive
+		"pure_toxin":         "pure_concentrated_toxin.jpg",
+		"experimental_serum": "experimental_bio_serum.jpg",
+		"bio_weapon":         "biological_weapon_sample.jpg",
+	}
+
+	if filename, exists := imageMap[artifactType]; exists {
+		return filename
+	}
+	return "default_artifact.jpg" // fallback
+}
+
 // Get artifact rarity based on type and tier
 func GetArtifactRarity(artifactType string, tier int) string {
 	// Exclusive artifacts are always legendary
