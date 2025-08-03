@@ -13,13 +13,13 @@ func GetZoneTemplate(biome string) ZoneTemplate {
 			Biome:            BiomeForest,
 			DangerLevel:      DangerLow,
 			MinTierRequired:  0,
-			AllowedArtifacts: []string{"mushroom_sample", "tree_resin", "animal_bones", "herbal_extract", "old_coin"},
+			AllowedArtifacts: []string{"mushroom_sample", "tree_resin", "animal_bones", "herbal_extract", "dewdrop_pearl"},
 			ArtifactSpawnRates: map[string]float64{
 				"mushroom_sample": 0.8,
 				"tree_resin":      0.6,
 				"animal_bones":    0.4,
 				"herbal_extract":  0.5,
-				"old_coin":        0.3,
+				"dewdrop_pearl":   0.3,
 			},
 			GearSpawnRates: map[string]float64{
 				"hunting_knife": 0.4,
@@ -73,9 +73,9 @@ func GetZoneTemplate(biome string) ZoneTemplate {
 			Biome:            BiomeIndustrial,
 			DangerLevel:      DangerHigh,
 			MinTierRequired:  2,
-			AllowedArtifacts: []string{"steel_ingot", "chemical_sample", "machinery_parts", "electronic_component", "toxic_waste"},
+			AllowedArtifacts: []string{"rusty_gear", "chemical_sample", "machinery_parts", "electronic_component", "toxic_waste"},
 			ArtifactSpawnRates: map[string]float64{
-				"steel_ingot":          0.6,
+				"rusty_gear":           0.6,
 				"chemical_sample":      0.4,
 				"machinery_parts":      0.5,
 				"electronic_component": 0.3,
@@ -103,13 +103,13 @@ func GetZoneTemplate(biome string) ZoneTemplate {
 			Biome:            BiomeUrban,
 			DangerLevel:      DangerMedium,
 			MinTierRequired:  1,
-			AllowedArtifacts: []string{"old_documents", "medical_supplies", "electronics", "urban_artifact", "cash_register"},
+			AllowedArtifacts: []string{"old_documents", "medical_supplies", "electronics", "urban_artifact", "pocket_radio"},
 			ArtifactSpawnRates: map[string]float64{
 				"old_documents":    0.5,
 				"medical_supplies": 0.3,
 				"electronics":      0.4,
 				"urban_artifact":   0.2,
-				"cash_register":    0.1,
+				"pocket_radio":     0.1,
 			},
 			GearSpawnRates: map[string]float64{
 				"flashlight":    0.6,
@@ -133,12 +133,12 @@ func GetZoneTemplate(biome string) ZoneTemplate {
 			Biome:            BiomeWater,
 			DangerLevel:      DangerMedium,
 			MinTierRequired:  1,
-			AllowedArtifacts: []string{"water_sample", "aquatic_plant", "filtered_water", "swamp_gas", "algae_biomass"},
+			AllowedArtifacts: []string{"water_sample", "aquatic_plant", "filtered_water", "abyss_pearl", "algae_biomass"},
 			ArtifactSpawnRates: map[string]float64{
 				"water_sample":   0.6,
 				"aquatic_plant":  0.4,
 				"filtered_water": 0.3,
-				"swamp_gas":      0.2,
+				"abyss_pearl":    0.2,
 				"algae_biomass":  0.3,
 			},
 			GearSpawnRates: map[string]float64{
