@@ -10,6 +10,7 @@ import (
 	"geoanomaly/internal/inventory"
 	"geoanomaly/internal/location"
 	"geoanomaly/internal/media"
+	"geoanomaly/internal/menu"
 	"geoanomaly/internal/user"
 	"geoanomaly/pkg/middleware"
 
@@ -41,6 +42,7 @@ func setupRoutes(db *gorm.DB, redisClient *redis.Client, r2Client *media.R2Clien
 	gameHandler := game.NewHandler(db, nil)
 	locationHandler := location.NewHandler(db, nil)
 	inventoryHandler := inventory.NewHandler(db)
+	menuHandler := menu.NewHandler(db)
 
 	// Initialize media service and handler
 	var mediaHandler *media.Handler
@@ -392,6 +394,33 @@ func setupRoutes(db *gorm.DB, redisClient *redis.Client, r2Client *media.R2Clien
 	}
 
 	// ==========================================
+	// 💰 MENU ROUTES (Protected - JWT required)
+	// ==========================================
+	menuRoutes := v1.Group("/menu")
+	menuRoutes.Use(middleware.JWTAuth())
+	{
+		// Currency endpoints
+		menuRoutes.GET("/currency/all", menuHandler.GetAllUserCurrencies)
+		menuRoutes.GET("/currency/:type", menuHandler.GetUserCurrency)
+
+		// Market endpoints
+		menuRoutes.GET("/market/items", menuHandler.GetMarketItems)
+		menuRoutes.POST("/market/purchase", menuHandler.PurchaseMarketItem)
+
+		// Essence package endpoints
+		menuRoutes.GET("/essence/packages", menuHandler.GetEssencePackages)
+		menuRoutes.POST("/essence/purchase", menuHandler.PurchaseEssencePackage)
+
+		// Inventory selling
+		menuRoutes.POST("/inventory/:id/sell", menuHandler.SellInventoryItem)
+
+		// Transaction history
+		menuRoutes.GET("/transactions", menuHandler.GetUserTransactions)
+		menuRoutes.GET("/purchases", menuHandler.GetUserPurchases)
+		menuRoutes.GET("/essence/purchases", menuHandler.GetUserEssencePurchases)
+	}
+
+	// ==========================================
 	// 🔧 ADMIN ROUTES (Protected - Admin only)
 	// ==========================================
 	adminRoutes := v1.Group("/admin")
@@ -412,6 +441,20 @@ func setupRoutes(db *gorm.DB, redisClient *redis.Client, r2Client *media.R2Clien
 		adminRoutes.GET("/analytics/zones", gameHandler.GetZoneAnalytics)
 		adminRoutes.GET("/analytics/players", userHandler.GetPlayerAnalytics)
 		adminRoutes.GET("/analytics/items", gameHandler.GetItemAnalytics)
+
+		// Menu admin endpoints
+		menuAdminRoutes := adminRoutes.Group("/menu")
+		{
+			// Market item management
+			menuAdminRoutes.POST("/market/items", menuHandler.CreateMarketItem)
+			menuAdminRoutes.PUT("/market/items/:id", menuHandler.UpdateMarketItem)
+			menuAdminRoutes.DELETE("/market/items/:id", menuHandler.DeleteMarketItem)
+
+			// Essence package management
+			menuAdminRoutes.POST("/essence/packages", menuHandler.CreateEssencePackage)
+			menuAdminRoutes.PUT("/essence/packages/:id", menuHandler.UpdateEssencePackage)
+			menuAdminRoutes.DELETE("/essence/packages/:id", menuHandler.DeleteEssencePackage)
+		}
 
 		// Security admin endpoints
 		securityRoutes := adminRoutes.Group("/security")
@@ -497,6 +540,18 @@ func setupRoutes(db *gorm.DB, redisClient *redis.Client, r2Client *media.R2Clien
 				"security":  "🛡️ CONNECT attacks blocked",
 				"endpoints": gin.H{
 					"media": mediaEndpoints,
+					"menu": gin.H{
+						"GET /menu/currency/all":         "💰 Get all user currencies",
+						"GET /menu/currency/{type}":      "💰 Get specific currency",
+						"GET /menu/market/items":         "🛒 Get market items",
+						"POST /menu/market/purchase":     "🛒 Purchase market item",
+						"GET /menu/essence/packages":     "💎 Get essence packages",
+						"POST /menu/essence/purchase":    "💎 Purchase essence package",
+						"POST /menu/inventory/{id}/sell": "💰 Sell inventory item",
+						"GET /menu/transactions":         "📊 Get transaction history",
+						"GET /menu/purchases":            "📊 Get purchase history",
+						"GET /menu/essence/purchases":    "📊 Get essence purchase history",
+					},
 					"inventory": gin.H{
 						"GET /inventory/items":         "🎒 Get user inventory (with images)",
 						"GET /inventory/summary":       "📊 Get inventory summary",
