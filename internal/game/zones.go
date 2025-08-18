@@ -1,6 +1,7 @@
 package game
 
 import (
+	"fmt"
 	"log"
 	"math"
 	"math/rand"
@@ -303,6 +304,68 @@ func (h *Handler) spawnSpecificArtifact(zoneID uuid.UUID, artifactType, biome st
 }
 
 func (h *Handler) spawnSpecificGear(zoneID uuid.UUID, gearType, biome string, tier int) error {
+	var zone common.Zone
+	if err := h.db.First(&zone, "id = ?", zoneID).Error; err != nil {
+		return err
+	}
+
+	// Najdi gear kategóriu v databáze
+	var gearCategory common.GearCategory
+	if err := h.db.Where("id = ? AND is_active = ?", gearType, true).First(&gearCategory).Error; err != nil {
+		// Ak sa kategória nenájde, použij fallback
+		log.Printf("⚠️ Gear category %s not found in database, using fallback", gearType)
+		return h.spawnSpecificGearFallback(zoneID, gearType, biome, tier)
+	}
+
+	// Skontroluj tier requirements
+	if gearCategory.Level > tier {
+		log.Printf("⚠️ Gear category %s requires tier %d, but zone is tier %d", gearType, gearCategory.Level, tier)
+		return fmt.Errorf("gear level too high for zone tier")
+	}
+
+	// Skontroluj biome requirements
+	if gearCategory.Biome != "all" && gearCategory.Biome != biome {
+		log.Printf("⚠️ Gear category %s is for biome %s, but zone is %s", gearType, gearCategory.Biome, biome)
+		return fmt.Errorf("gear biome mismatch")
+	}
+
+	lat, lng := h.generateRandomPosition(zone.Location.Latitude, zone.Location.Longitude, float64(zone.RadiusMeters))
+
+	gear := common.Gear{
+		BaseModel: common.BaseModel{ID: uuid.New()},
+		ZoneID:    zoneID,
+		Name:      gearCategory.Name,
+		Type:      gearCategory.ID, // Použijeme ID kategórie ako type
+		Level:     gearCategory.Level,
+		Biome:     biome,
+		Location: common.Location{
+			Latitude:  lat,
+			Longitude: lng,
+			Timestamp: time.Now(),
+		},
+		Properties: common.JSONB{
+			"spawn_time":         time.Now().Unix(),
+			"spawner":            "biome_specific",
+			"zone_tier":          tier,
+			"biome":              biome,
+			"spawn_reason":       "zone_creation",
+			"category_id":        gearCategory.ID,
+			"slot":               gearCategory.SlotID,
+			"rarity":             gearCategory.Rarity,
+			"base_durability":    gearCategory.BaseDurability,
+			"zombie_resistance":  gearCategory.BaseZombieResistance,
+			"bandit_resistance":  gearCategory.BaseBanditResistance,
+			"soldier_resistance": gearCategory.BaseSoldierResistance,
+			"monster_resistance": gearCategory.BaseMonsterResistance,
+		},
+		IsActive: true,
+	}
+
+	return h.db.Create(&gear).Error
+}
+
+// Fallback funkcia pre staré gear types
+func (h *Handler) spawnSpecificGearFallback(zoneID uuid.UUID, gearType, biome string, tier int) error {
 	var zone common.Zone
 	if err := h.db.First(&zone, "id = ?", zoneID).Error; err != nil {
 		return err

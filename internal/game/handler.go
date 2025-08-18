@@ -763,33 +763,78 @@ func (h *Handler) CollectItem(c *gin.Context) {
 		gear.IsActive = false
 		h.db.Save(&gear)
 
-		// Vytvor inventory item cez GearService pre lepšiu integráciu s loadout systémom
+		// Vytvor inventory item s properties z gear objektu alebo fallback na GearService
+		properties := common.JSONB{
+			"name":           gear.Name,
+			"type":           gear.Type,
+			"level":          gear.Level,
+			"biome":          gear.Biome,
+			"equipped":       false,
+			"collected_at":   time.Now().Unix(),
+			"collected_from": zoneID,
+			"zone_name":      zone.Name,
+			"zone_biome":     zone.Biome,
+			"danger_level":   zone.DangerLevel,
+			"acquired_at":    time.Now().Format(time.RFC3339),
+		}
+
+		// Skontroluj či gear má už properties z databázy
+		if slot, exists := gear.Properties["slot"].(string); exists {
+			properties["slot"] = slot
+		} else {
+			properties["slot"] = h.gearService.getSlotForGearType(gear.Type)
+		}
+
+		if rarity, exists := gear.Properties["rarity"].(string); exists {
+			properties["rarity"] = rarity
+		} else {
+			properties["rarity"] = h.gearService.getRarityForLevel(gear.Level)
+		}
+
+		if durability, exists := gear.Properties["base_durability"].(float64); exists {
+			properties["durability"] = int(durability)
+			properties["max_durability"] = int(durability)
+		} else {
+			properties["durability"] = 100
+			properties["max_durability"] = 100
+		}
+
+		// Resistance properties
+		if zombieRes, exists := gear.Properties["zombie_resistance"].(float64); exists {
+			properties["zombie_resistance"] = int(zombieRes)
+		} else {
+			properties["zombie_resistance"] = h.gearService.calculateResistance(gear.Level, "zombie")
+		}
+
+		if banditRes, exists := gear.Properties["bandit_resistance"].(float64); exists {
+			properties["bandit_resistance"] = int(banditRes)
+		} else {
+			properties["bandit_resistance"] = h.gearService.calculateResistance(gear.Level, "bandit")
+		}
+
+		if soldierRes, exists := gear.Properties["soldier_resistance"].(float64); exists {
+			properties["soldier_resistance"] = int(soldierRes)
+		} else {
+			properties["soldier_resistance"] = h.gearService.calculateResistance(gear.Level, "soldier")
+		}
+
+		if monsterRes, exists := gear.Properties["monster_resistance"].(float64); exists {
+			properties["monster_resistance"] = int(monsterRes)
+		} else {
+			properties["monster_resistance"] = h.gearService.calculateResistance(gear.Level, "monster")
+		}
+
+		// Pridaj category_id ak existuje
+		if categoryID, exists := gear.Properties["category_id"].(string); exists {
+			properties["category_id"] = categoryID
+		}
+
 		inventoryItem := common.InventoryItem{
-			UserID:   user.ID,
-			ItemType: "gear",
-			ItemID:   uuid.New(), // Unikátne ID pre tento konkrétny predmet
-			Quantity: 1,
-			Properties: common.JSONB{
-				"name":               gear.Name,
-				"type":               gear.Type,
-				"level":              gear.Level,
-				"slot":               h.gearService.getSlotForGearType(gear.Type),
-				"rarity":             h.gearService.getRarityForLevel(gear.Level),
-				"durability":         100,
-				"max_durability":     100,
-				"zombie_resistance":  h.gearService.calculateResistance(gear.Level, "zombie"),
-				"bandit_resistance":  h.gearService.calculateResistance(gear.Level, "bandit"),
-				"soldier_resistance": h.gearService.calculateResistance(gear.Level, "soldier"),
-				"monster_resistance": h.gearService.calculateResistance(gear.Level, "monster"),
-				"biome":              gear.Biome,
-				"equipped":           false,
-				"collected_at":       time.Now().Unix(),
-				"collected_from":     zoneID,
-				"zone_name":          zone.Name,
-				"zone_biome":         zone.Biome,
-				"danger_level":       zone.DangerLevel,
-				"acquired_at":        time.Now().Format(time.RFC3339),
-			},
+			UserID:     user.ID,
+			ItemType:   "gear",
+			ItemID:     uuid.New(), // Unikátne ID pre tento konkrétny predmet
+			Quantity:   1,
+			Properties: properties,
 		}
 		h.db.Create(&inventoryItem)
 
