@@ -4,6 +4,7 @@ import (
 	"log"
 	"time"
 
+	"geoanomaly/internal/admin"
 	"geoanomaly/internal/auth"
 	"geoanomaly/internal/common"
 	"geoanomaly/internal/game"
@@ -45,6 +46,7 @@ func setupRoutes(db *gorm.DB, redisClient *redis.Client, r2Client *media.R2Clien
 	inventoryHandler := inventory.NewHandler(db)
 	menuHandler := menu.NewHandler(db)
 	loadoutHandler := loadout.NewHandler(db)
+	adminHandler := admin.NewHandler(db, nil)
 
 	// Initialize media service and handler
 	var mediaHandler *media.Handler
@@ -469,6 +471,9 @@ func setupRoutes(db *gorm.DB, redisClient *redis.Client, r2Client *media.R2Clien
 		adminRoutes.GET("/analytics/zones", gameHandler.GetZoneAnalytics)
 		adminRoutes.GET("/analytics/players", userHandler.GetPlayerAnalytics)
 		adminRoutes.GET("/analytics/items", gameHandler.GetItemAnalytics)
+
+		// Inventory management
+		adminRoutes.POST("/inventory/add", adminHandler.AddInventoryItem)
 
 		// Menu admin endpoints
 		menuAdminRoutes := adminRoutes.Group("/menu")

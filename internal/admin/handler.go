@@ -4,6 +4,8 @@ import (
 	"geoanomaly/internal/common"
 	"net/http"
 
+	"geoanomaly/internal/game"
+
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
@@ -98,6 +100,60 @@ func (h *Handler) SpawnArtifact(c *gin.Context) {
 
 func (h *Handler) SpawnGear(c *gin.Context) {
 	c.JSON(http.StatusNotImplemented, gin.H{"error": "Spawn gear not implemented yet"})
+}
+
+// AddInventoryItem - pridá predmet do inventára používateľa
+func (h *Handler) AddInventoryItem(c *gin.Context) {
+	userID := c.Query("user_id")
+	if userID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "user_id parameter required"})
+		return
+	}
+
+	var req struct {
+		CategoryID string `json:"category_id" binding:"required"`
+		ItemType   string `json:"item_type" binding:"required"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Parse user ID
+	userUUID, err := uuid.Parse(userID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid user ID format"})
+		return
+	}
+
+	// Check if user exists
+	var user common.User
+	if err := h.db.First(&user, "id = ?", userUUID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
+		return
+	}
+
+	// Handle different item types
+	switch req.ItemType {
+	case "gear":
+		// Create gear item using GearService
+		gearService := game.NewGearService(h.db)
+		inventoryItem, err := gearService.CreateGearItem(req.CategoryID, userUUID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create gear item"})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"success": true,
+			"message": "Gear item added to inventory",
+			"item":    inventoryItem,
+		})
+
+	default:
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Unsupported item type"})
+	}
 }
 
 func (h *Handler) CleanupExpiredZones(c *gin.Context) {

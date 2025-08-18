@@ -84,7 +84,7 @@ func (h *Handler) CheckUserCanCollectItem(userTier int, itemType, itemID string)
 			return false, "Gear not found"
 		}
 
-		maxLevel := h.getMaxGearLevelForTier(userTier)
+		maxLevel := h.gearService.getMaxGearLevelForTier(userTier)
 		if gear.Level > maxLevel {
 			log.Printf("🚫 User tier %d cannot collect level %d gear (max level %d)", userTier, gear.Level, maxLevel)
 			return false, fmt.Sprintf("Requires higher tier to collect level %d gear", gear.Level)

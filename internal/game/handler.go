@@ -391,7 +391,7 @@ func (h *Handler) GetZoneDetails(c *gin.Context) {
 	h.db.Where("zone_id = ? AND is_active = true", zone.ID).Find(&gear)
 
 	filteredArtifacts := h.filterArtifactsByTier(artifacts, user.Tier)
-	filteredGear := h.filterGearByTier(gear, user.Tier)
+	filteredGear := h.gearService.FilterGearByTier(gear, user.Tier)
 
 	c.JSON(http.StatusOK, gin.H{
 		"zone":      details,
@@ -619,7 +619,7 @@ func (h *Handler) ScanZone(c *gin.Context) {
 	h.db.Where("zone_id = ? AND is_active = true", zoneID).Find(&gear)
 
 	filteredArtifacts := h.filterArtifactsByTier(artifacts, user.Tier)
-	filteredGear := h.filterGearByTier(gear, user.Tier)
+	filteredGear := h.gearService.FilterGearByTier(gear, user.Tier)
 
 	c.JSON(http.StatusOK, gin.H{
 		"zone_name":       zone.Name,
@@ -763,27 +763,37 @@ func (h *Handler) CollectItem(c *gin.Context) {
 		gear.IsActive = false
 		h.db.Save(&gear)
 
-		// Add to inventory
-		inventory := common.InventoryItem{
+		// Vytvor inventory item cez GearService pre lepšiu integráciu s loadout systémom
+		inventoryItem := common.InventoryItem{
 			UserID:   user.ID,
 			ItemType: "gear",
-			ItemID:   gear.ID,
+			ItemID:   uuid.New(), // Unikátne ID pre tento konkrétny predmet
 			Quantity: 1,
 			Properties: common.JSONB{
-				"name":           gear.Name,
-				"type":           gear.Type,
-				"level":          gear.Level,
-				"biome":          gear.Biome,
-				"collected_at":   time.Now().Unix(),
-				"collected_from": zoneID,
-				"zone_name":      zone.Name,
-				"zone_biome":     zone.Biome,
-				"danger_level":   zone.DangerLevel,
+				"name":               gear.Name,
+				"type":               gear.Type,
+				"level":              gear.Level,
+				"slot":               h.gearService.getSlotForGearType(gear.Type),
+				"rarity":             h.gearService.getRarityForLevel(gear.Level),
+				"durability":         100,
+				"max_durability":     100,
+				"zombie_resistance":  h.gearService.calculateResistance(gear.Level, "zombie"),
+				"bandit_resistance":  h.gearService.calculateResistance(gear.Level, "bandit"),
+				"soldier_resistance": h.gearService.calculateResistance(gear.Level, "soldier"),
+				"monster_resistance": h.gearService.calculateResistance(gear.Level, "monster"),
+				"biome":              gear.Biome,
+				"equipped":           false,
+				"collected_at":       time.Now().Unix(),
+				"collected_from":     zoneID,
+				"zone_name":          zone.Name,
+				"zone_biome":         zone.Biome,
+				"danger_level":       zone.DangerLevel,
+				"acquired_at":        time.Now().Format(time.RFC3339),
 			},
 		}
-		h.db.Create(&inventory)
+		h.db.Create(&inventoryItem)
 
-		collectedItem = gear
+		collectedItem = inventoryItem
 		itemName = gear.Name
 		biome = gear.Biome
 
@@ -1140,9 +1150,55 @@ func (h *Handler) GetAvailableArtifacts(c *gin.Context) {
 }
 
 func (h *Handler) GetAvailableGear(c *gin.Context) {
-	c.JSON(http.StatusNotImplemented, gin.H{
-		"error":  "Get available gear not implemented yet",
-		"status": "planned",
+	userID, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not found"})
+		return
+	}
+
+	// Get user tier
+	var user common.User
+	if err := h.db.First(&user, "id = ?", userID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
+		return
+	}
+
+	// Get biome from query parameter
+	biome := c.DefaultQuery("biome", "")
+	if biome == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Biome parameter required"})
+		return
+	}
+
+	// Get available gear using GearService - vráti gear ktorý sa môže spawnovať v zónach
+	availableGear, err := h.gearService.GetAvailableGearInZones(user.Tier, biome)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get available gear"})
+		return
+	}
+
+	// Konvertuj na response format
+	var gearResponse []gin.H
+	for _, gear := range availableGear {
+		gearResponse = append(gearResponse, gin.H{
+			"id":           gear.ID,
+			"name":         gear.Name,
+			"type":         gear.Type,
+			"level":        gear.Level,
+			"biome":        gear.Biome,
+			"slot":         h.gearService.getSlotForGearType(gear.Type),
+			"rarity":       h.gearService.getRarityForLevel(gear.Level),
+			"display_name": GetGearDisplayName(gear.Type),
+		})
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"gear":        gearResponse,
+		"total_gear":  len(gearResponse),
+		"user_tier":   user.Tier,
+		"biome":       biome,
+		"message":     "Available gear retrieved successfully",
+		"description": "Gear that can spawn in zones for this tier and biome",
 	})
 }
 

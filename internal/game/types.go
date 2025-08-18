@@ -14,6 +14,7 @@ type Handler struct {
 	db             *gorm.DB
 	redis          *redis_client.Client
 	loadoutService *loadout.Service
+	gearService    *GearService
 }
 
 // Request/Response struktury
@@ -112,5 +113,6 @@ func NewHandler(db *gorm.DB, redisClient *redis_client.Client) *Handler {
 		db:             db,
 		redis:          redisClient,
 		loadoutService: loadout.NewService(db),
+		gearService:    NewGearService(db),
 	}
 }
