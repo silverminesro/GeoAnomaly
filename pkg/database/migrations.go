@@ -2,6 +2,7 @@ package database
 
 import (
 	"geoanomaly/internal/common"
+	"geoanomaly/internal/menu"
 
 	"gorm.io/gorm"
 )
@@ -20,6 +21,13 @@ func AutoMigrate(db *gorm.DB) error {
 		&common.Artifact{},
 		&common.Gear{},
 		&common.PlayerSession{},
+		// Menu models
+		&menu.Currency{},
+		&menu.Transaction{},
+		&menu.MarketItem{},
+		&menu.UserPurchase{},
+		&menu.EssencePackage{},
+		&menu.UserEssencePurchase{},
 	)
 
 	if err != nil {
@@ -33,6 +41,11 @@ func AutoMigrate(db *gorm.DB) error {
 
 	// ✅ PRIDANÉ: Create biome-specific indexes
 	if err := createBiomeIndexes(db); err != nil {
+		return err
+	}
+
+	// ✅ PRIDANÉ: Create menu-specific indexes
+	if err := createMenuIndexes(db); err != nil {
 		return err
 	}
 
@@ -120,6 +133,59 @@ func createBiomeIndexes(db *gorm.DB) error {
 	if err := db.Exec(`
 		CREATE INDEX IF NOT EXISTS idx_zones_tier_biome 
 		ON zones (tier_required, biome, is_active)
+	`).Error; err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// ✅ PRIDANÉ: Menu-specific database indexes
+func createMenuIndexes(db *gorm.DB) error {
+	// Index for currencies by user and type
+	if err := db.Exec(`
+		CREATE INDEX IF NOT EXISTS idx_currencies_user_type 
+		ON currencies (user_id, type)
+	`).Error; err != nil {
+		return err
+	}
+
+	// Index for transactions by user
+	if err := db.Exec(`
+		CREATE INDEX IF NOT EXISTS idx_transactions_user 
+		ON transactions (user_id, created_at DESC)
+	`).Error; err != nil {
+		return err
+	}
+
+	// Index for market items by category and rarity
+	if err := db.Exec(`
+		CREATE INDEX IF NOT EXISTS idx_market_items_category_rarity 
+		ON market_items (category, rarity, is_active)
+	`).Error; err != nil {
+		return err
+	}
+
+	// Index for user purchases by user
+	if err := db.Exec(`
+		CREATE INDEX IF NOT EXISTS idx_user_purchases_user 
+		ON user_purchases (user_id, created_at DESC)
+	`).Error; err != nil {
+		return err
+	}
+
+	// Index for essence packages by active status
+	if err := db.Exec(`
+		CREATE INDEX IF NOT EXISTS idx_essence_packages_active 
+		ON essence_packages (is_active, is_popular)
+	`).Error; err != nil {
+		return err
+	}
+
+	// Index for user essence purchases by user
+	if err := db.Exec(`
+		CREATE INDEX IF NOT EXISTS idx_user_essence_purchases_user 
+		ON user_essence_purchases (user_id, created_at DESC)
 	`).Error; err != nil {
 		return err
 	}
