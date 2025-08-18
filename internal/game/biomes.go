@@ -22,13 +22,13 @@ func GetZoneTemplate(biome string) ZoneTemplate {
 				"dewdrop_pearl":   0.3,
 			},
 			GearSpawnRates: map[string]float64{
-				"tactical_cap":   0.6, // Head gear
-				"sunglasses":     0.5, // Face gear
-				"leather_jacket": 0.4, // Body gear
-				"combat_gloves":  0.5, // Hands gear
-				"combat_pants":   0.4, // Legs gear
-				"combat_boots":   0.5, // Feet gear
-				"basic_scanner":  0.3, // Scanner gear
+				"tactical_cap":    0.6, // Head gear (tier 1)
+				"sunglasses":      0.5, // Face gear (tier 1)
+				"leather_jacket":  0.4, // Body gear (tier 2)
+				"combat_gloves":   0.5, // Hands gear (tier 2)
+				"combat_pants":    0.4, // Legs gear (tier 2)
+				"combat_boots":    0.5, // Feet gear (tier 2)
+				"basic_scanner":   0.3, // Scanner gear (tier 1)
 			},
 			EnvironmentalEffects: map[string]interface{}{
 				"fog":          true,
@@ -56,11 +56,11 @@ func GetZoneTemplate(biome string) ZoneTemplate {
 				"ice_crystal":   0.2,
 			},
 			GearSpawnRates: map[string]float64{
-				"military_helmet":  0.5, // Head gear
-				"tactical_boots":   0.6, // Feet gear
-				"tactical_gloves":  0.4, // Hands gear
-				"tactical_pants":   0.4, // Legs gear
-				"advanced_scanner": 0.3, // Scanner gear
+				"tactical_cap":    0.5, // Head gear (tier 1)
+				"combat_boots":    0.6, // Feet gear (tier 2)
+				"combat_gloves":   0.4, // Hands gear (tier 2)
+				"combat_pants":    0.4, // Legs gear (tier 2)
+				"basic_scanner":   0.3, // Scanner gear (tier 1)
 			},
 			EnvironmentalEffects: map[string]interface{}{
 				"altitude_sickness": true,
@@ -88,12 +88,11 @@ func GetZoneTemplate(biome string) ZoneTemplate {
 				"toxic_waste":          0.2,
 			},
 			GearSpawnRates: map[string]float64{
-				"gas_mask":         0.5, // Face gear
-				"hazmat_boots":     0.4, // Feet gear
-				"hazmat_gloves":    0.4, // Hands gear
-				"hazmat_pants":     0.4, // Legs gear
-				"tactical_vest":    0.3, // Vest gear
-				"advanced_scanner": 0.3, // Scanner gear
+				"combat_boots":     0.5, // Feet gear (tier 2)
+				"combat_gloves":    0.4, // Hands gear (tier 2)
+				"combat_pants":     0.4, // Legs gear (tier 2)
+				"leather_jacket":   0.3, // Body gear (tier 2)
+				"basic_scanner":    0.3, // Scanner gear (tier 1)
 			},
 			EnvironmentalEffects: map[string]interface{}{
 				"toxic_air":         true,
@@ -121,14 +120,13 @@ func GetZoneTemplate(biome string) ZoneTemplate {
 				"pocket_radio":     0.1,
 			},
 			GearSpawnRates: map[string]float64{
-				"military_helmet":      0.4, // Head gear
-				"night_vision_goggles": 0.3, // Face gear
-				"bulletproof_vest":     0.3, // Body gear
-				"tactical_vest":        0.4, // Vest gear
-				"tactical_gloves":      0.5, // Hands gear
-				"tactical_pants":       0.4, // Legs gear
-				"tactical_boots":       0.5, // Feet gear
-				"advanced_scanner":     0.3, // Scanner gear
+				"tactical_cap":     0.4, // Head gear (tier 1)
+				"sunglasses":       0.3, // Face gear (tier 1)
+				"combat_boots":     0.5, // Feet gear (tier 2)
+				"combat_gloves":    0.4, // Hands gear (tier 2)
+				"combat_pants":     0.4, // Legs gear (tier 2)
+				"leather_jacket":   0.3, // Body gear (tier 2)
+				"basic_scanner":    0.3, // Scanner gear (tier 1)
 			},
 			EnvironmentalEffects: map[string]interface{}{
 				"unstable_buildings": true,
@@ -156,12 +154,12 @@ func GetZoneTemplate(biome string) ZoneTemplate {
 				"algae_biomass":  0.3,
 			},
 			GearSpawnRates: map[string]float64{
-				"hazmat_hood":      0.4, // Head gear
-				"hazmat_boots":     0.5, // Feet gear
-				"hazmat_gloves":    0.4, // Hands gear
-				"hazmat_pants":     0.4, // Legs gear
-				"hazmat_suit":      0.3, // Body gear
-				"advanced_scanner": 0.3, // Scanner gear
+				"tactical_cap":     0.4, // Head gear (tier 1)
+				"combat_boots":     0.5, // Feet gear (tier 2)
+				"combat_gloves":    0.4, // Hands gear (tier 2)
+				"combat_pants":     0.4, // Legs gear (tier 2)
+				"leather_jacket":   0.3, // Body gear (tier 2)
+				"basic_scanner":    0.3, // Scanner gear (tier 1)
 			},
 			EnvironmentalEffects: map[string]interface{}{
 				"contaminated_water": true,
