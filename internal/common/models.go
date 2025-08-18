@@ -251,3 +251,64 @@ func (ps *PlayerSession) SetLastLocation(loc LocationWithAccuracy) {
 	ps.LastLocationAccuracy = loc.Accuracy
 	ps.LastLocationTimestamp = loc.Timestamp
 }
+
+// LoadoutSlot definuje dostupné sloty pre gear
+type LoadoutSlot struct {
+	ID          string `json:"id" gorm:"primaryKey"`
+	Name        string `json:"name" gorm:"not null"`
+	Description string `json:"description"`
+	MaxItems    int    `json:"max_items" gorm:"default:1"`
+	IsRequired  bool   `json:"is_required" gorm:"default:false"`
+	Order       int    `json:"order" gorm:"default:0"`
+}
+
+// LoadoutItem reprezentuje vybavený gear v loadoute
+type LoadoutItem struct {
+	BaseModel
+	UserID     uuid.UUID `json:"user_id" gorm:"not null;index"`
+	SlotID     string    `json:"slot_id" gorm:"not null;size:50"`
+	ItemID     uuid.UUID `json:"item_id" gorm:"not null"`
+	ItemType   string    `json:"item_type" gorm:"not null;size:50"`
+	EquippedAt time.Time `json:"equipped_at" gorm:"not null"`
+	
+	// Durability systém
+	Durability     int       `json:"durability" gorm:"default:100"` // 0-100
+	MaxDurability  int       `json:"max_durability" gorm:"default:100"`
+	LastRepaired   time.Time `json:"last_repaired"`
+	
+	// Odolnosť proti nepriateľom
+	ZombieResistance     int `json:"zombie_resistance" gorm:"default:0"`
+	BanditResistance     int `json:"bandit_resistance" gorm:"default:0"`
+	SoldierResistance    int `json:"soldier_resistance" gorm:"default:0"`
+	MonsterResistance    int `json:"monster_resistance" gorm:"default:0"`
+	
+	// Properties pre flexibilitu
+	Properties JSONB `json:"properties,omitempty" gorm:"type:jsonb;default:'{}'::jsonb"`
+	
+	// Relationships
+	User *User `json:"user,omitempty" gorm:"foreignKey:UserID"`
+}
+
+// GearCategory definuje kategórie gearu
+type GearCategory struct {
+	ID          string `json:"id" gorm:"primaryKey"`
+	Name        string `json:"name" gorm:"not null"`
+	Description string `json:"description"`
+	SlotID      string `json:"slot_id" gorm:"not null;size:50"`
+	Rarity      string `json:"rarity" gorm:"default:'common'"`
+	Level       int    `json:"level" gorm:"default:1"`
+	
+	// Base stats
+	BaseDurability      int `json:"base_durability" gorm:"default:100"`
+	BaseZombieResistance int `json:"base_zombie_resistance" gorm:"default:0"`
+	BaseBanditResistance int `json:"base_bandit_resistance" gorm:"default:0"`
+	BaseSoldierResistance int `json:"base_soldier_resistance" gorm:"default:0"`
+	BaseMonsterResistance int `json:"base_monster_resistance" gorm:"default:0"`
+	
+	// Biome specific
+	Biome            string `json:"biome" gorm:"size:50;default:'all'"`
+	ExclusiveToBiome bool   `json:"exclusive_to_biome" gorm:"default:false"`
+	
+	Properties JSONB `json:"properties,omitempty" gorm:"type:jsonb;default:'{}'::jsonb"`
+	IsActive   bool  `json:"is_active" gorm:"default:true"`
+}

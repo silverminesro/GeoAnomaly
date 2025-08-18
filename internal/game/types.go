@@ -2,6 +2,7 @@ package game
 
 import (
 	"geoanomaly/internal/common"
+	"geoanomaly/internal/loadout"
 	"time"
 
 	redis_client "github.com/redis/go-redis/v9"
@@ -10,8 +11,9 @@ import (
 
 // Handler pre game package
 type Handler struct {
-	db    *gorm.DB
-	redis *redis_client.Client
+	db             *gorm.DB
+	redis          *redis_client.Client
+	loadoutService *loadout.Service
 }
 
 // Request/Response struktury
@@ -107,7 +109,8 @@ type ArtifactTemplate struct {
 
 func NewHandler(db *gorm.DB, redisClient *redis_client.Client) *Handler {
 	return &Handler{
-		db:    db,
-		redis: redisClient,
+		db:             db,
+		redis:          redisClient,
+		loadoutService: loadout.NewService(db),
 	}
 }

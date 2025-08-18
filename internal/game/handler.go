@@ -471,6 +471,28 @@ func (h *Handler) EnterZone(c *gin.Context) {
 		return
 	}
 
+	// Apply durability damage to equipped gear
+	if h.loadoutService != nil {
+		// Convert danger level string to int
+		dangerLevel := 1 // default
+		switch zone.DangerLevel {
+		case "low":
+			dangerLevel = 1
+		case "medium":
+			dangerLevel = 3
+		case "high":
+			dangerLevel = 5
+		case "extreme":
+			dangerLevel = 8
+		case "deadly":
+			dangerLevel = 10
+		}
+
+		if err := h.loadoutService.ApplyDurabilityDamage(user.ID, dangerLevel, zone.Biome); err != nil {
+			log.Printf("Warning: Failed to apply durability damage: %v", err)
+		}
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"message":              "Successfully entered zone",
 		"zone_name":            zone.Name,

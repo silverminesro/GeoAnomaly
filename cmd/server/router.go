@@ -8,6 +8,7 @@ import (
 	"geoanomaly/internal/common"
 	"geoanomaly/internal/game"
 	"geoanomaly/internal/inventory"
+	"geoanomaly/internal/loadout"
 	"geoanomaly/internal/location"
 	"geoanomaly/internal/media"
 	"geoanomaly/internal/menu"
@@ -43,6 +44,7 @@ func setupRoutes(db *gorm.DB, redisClient *redis.Client, r2Client *media.R2Clien
 	locationHandler := location.NewHandler(db, nil)
 	inventoryHandler := inventory.NewHandler(db)
 	menuHandler := menu.NewHandler(db)
+	loadoutHandler := loadout.NewHandler(db)
 
 	// Initialize media service and handler
 	var mediaHandler *media.Handler
@@ -348,6 +350,21 @@ func setupRoutes(db *gorm.DB, redisClient *redis.Client, r2Client *media.R2Clien
 	}
 
 	// ==========================================
+	// 🛡️ LOADOUT ROUTES (Protected - JWT required)
+	// ==========================================
+	loadoutRoutes := v1.Group("/loadout")
+	loadoutRoutes.Use(middleware.JWTAuth())
+	{
+		loadoutRoutes.GET("/slots", loadoutHandler.GetLoadoutSlots)
+		loadoutRoutes.GET("/user", loadoutHandler.GetUserLoadout)
+		loadoutRoutes.POST("/equip", loadoutHandler.EquipItem)
+		loadoutRoutes.DELETE("/:slot_id/unequip", loadoutHandler.UnequipItem)
+		loadoutRoutes.POST("/:slot_id/repair", loadoutHandler.RepairItem)
+		loadoutRoutes.GET("/stats", loadoutHandler.GetLoadoutStats)
+		loadoutRoutes.GET("/categories", loadoutHandler.GetGearCategories)
+	}
+
+	// ==========================================
 	// 🎮 GAME ROUTES (Protected - JWT required)
 	// ==========================================
 	gameRoutes := v1.Group("/game")
@@ -398,6 +415,7 @@ func setupRoutes(db *gorm.DB, redisClient *redis.Client, r2Client *media.R2Clien
 	// ==========================================
 	menuRoutes := v1.Group("/menu")
 	menuRoutes.Use(middleware.JWTAuth())
+	menuRoutes.Use(middleware.TierExpirationMiddleware(menuHandler.GetService()))
 	{
 		// Currency endpoints
 		menuRoutes.GET("/currency/all", menuHandler.GetAllUserCurrencies)
@@ -410,6 +428,16 @@ func setupRoutes(db *gorm.DB, redisClient *redis.Client, r2Client *media.R2Clien
 		// Essence package endpoints
 		menuRoutes.GET("/essence/packages", menuHandler.GetEssencePackages)
 		menuRoutes.POST("/essence/purchase", menuHandler.PurchaseEssencePackage)
+
+		// Tier package endpoints
+		menuRoutes.GET("/tier/packages", menuHandler.GetTierPackages)
+		menuRoutes.POST("/tier/purchase", menuHandler.PurchaseTierPackage)
+		menuRoutes.GET("/tier/history", menuHandler.GetUserTierHistory)
+		menuRoutes.POST("/tier/check-expired", menuHandler.CheckExpiredTiers)
+
+		// Google Play Billing endpoints
+		menuRoutes.POST("/google-play/verify-purchase", menuHandler.VerifyGooglePlayPurchase)
+		menuRoutes.POST("/google-play/verify-subscription", menuHandler.VerifyGooglePlaySubscription) // Admin endpoint
 
 		// Inventory selling
 		menuRoutes.POST("/inventory/:id/sell", menuHandler.SellInventoryItem)

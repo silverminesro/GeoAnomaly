@@ -31,18 +31,19 @@ type UpdateLocationRequest struct {
 	Accuracy  float64 `json:"accuracy,omitempty"`
 }
 
-// ✅ OPRAVENÉ: Vymazané LastLocation z response
+// ✅ OPRAVENÉ: Pridané TierExpires pole
 type UserProfileResponse struct {
-	ID        uuid.UUID              `json:"id"`
-	Username  string                 `json:"username"`
-	Email     string                 `json:"email"`
-	Tier      int                    `json:"tier"`
-	XP        int                    `json:"xp"`
-	Level     int                    `json:"level"`
-	IsActive  bool                   `json:"is_active"`
-	CreatedAt time.Time              `json:"created_at"`
-	Stats     UserStats              `json:"stats"`
-	Inventory []common.InventoryItem `json:"inventory,omitempty"`
+	ID          uuid.UUID              `json:"id"`
+	Username    string                 `json:"username"`
+	Email       string                 `json:"email"`
+	Tier        int                    `json:"tier"`
+	TierExpires *time.Time             `json:"tier_expires"`
+	XP          int                    `json:"xp"`
+	Level       int                    `json:"level"`
+	IsActive    bool                   `json:"is_active"`
+	CreatedAt   time.Time              `json:"created_at"`
+	Stats       UserStats              `json:"stats"`
+	Inventory   []common.InventoryItem `json:"inventory,omitempty"`
 }
 
 type UserStats struct {
@@ -83,18 +84,19 @@ func (h *Handler) GetProfile(c *gin.Context) {
 	// Vypočítaj štatistiky
 	stats := h.calculateUserStats(user.ID)
 
-	// ✅ OPRAVENÉ: Vymazané LastLocation z response
+	// ✅ OPRAVENÉ: Pridané TierExpires do response
 	response := UserProfileResponse{
-		ID:        user.ID,
-		Username:  user.Username,
-		Email:     user.Email,
-		Tier:      user.Tier,
-		XP:        user.XP,
-		Level:     user.Level,
-		IsActive:  user.IsActive,
-		CreatedAt: user.CreatedAt,
-		Stats:     stats,
-		Inventory: user.Inventory,
+		ID:          user.ID,
+		Username:    user.Username,
+		Email:       user.Email,
+		Tier:        user.Tier,
+		TierExpires: user.TierExpires,
+		XP:          user.XP,
+		Level:       user.Level,
+		IsActive:    user.IsActive,
+		CreatedAt:   user.CreatedAt,
+		Stats:       stats,
+		Inventory:   user.Inventory,
 	}
 
 	// Cachuj na 5 minút (ak je Redis dostupný)

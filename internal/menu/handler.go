@@ -1,6 +1,7 @@
 package menu
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
 
@@ -10,12 +11,22 @@ import (
 )
 
 type Handler struct {
-	service *Service
+	service           *Service
+	googlePlayBilling *GooglePlayBillingService
 }
 
 func NewHandler(db *gorm.DB) *Handler {
 	service := NewService(db)
-	return &Handler{service: service}
+	googlePlayBilling := NewGooglePlayBillingService(db)
+	return &Handler{
+		service:           service,
+		googlePlayBilling: googlePlayBilling,
+	}
+}
+
+// GetService returns the service instance (for middleware access)
+func (h *Handler) GetService() *Service {
+	return h.service
 }
 
 // Currency endpoints
@@ -472,5 +483,211 @@ func (h *Handler) DeleteEssencePackage(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"message": "Essence package deleted successfully",
+	})
+}
+
+// Tier package endpoints
+func (h *Handler) GetTierPackages(c *gin.Context) {
+	_, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+		return
+	}
+
+	var tiers []struct {
+		TierLevel              int     `json:"tier_level"`
+		TierName               string  `json:"tier_name"`
+		PriceMonthly           float64 `json:"price_monthly"`
+		MaxZonesPerScan        int     `json:"max_zones_per_scan"`
+		CollectCooldownSeconds int     `json:"collect_cooldown_seconds"`
+		ScanCooldownMinutes    int     `json:"scan_cooldown_minutes"`
+		InventorySlots         int     `json:"inventory_slots"`
+		Features               string  `json:"features"` // Zmenené na string pre JSONB
+	}
+
+	err := h.service.db.Table("tier_definitions").
+		Where("tier_level > 0 AND tier_level < 4"). // Len user tiers, nie admin
+		Find(&tiers).Error
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"tier_packages": tiers,
+		"count":         len(tiers),
+		"message":       "Tier packages retrieved successfully",
+	})
+}
+
+func (h *Handler) PurchaseTierPackage(c *gin.Context) {
+	userID, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+		return
+	}
+
+	var request struct {
+		TierLevel       int    `json:"tier_level" binding:"required"`
+		DurationMonths  int    `json:"duration_months" binding:"required,min=1,max=12"`
+		PaymentMethod   string `json:"payment_method" binding:"required"`
+		PaymentCurrency string `json:"payment_currency" binding:"required"`
+	}
+
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Validate tier level
+	if request.TierLevel < 1 || request.TierLevel > 3 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid tier level"})
+		return
+	}
+
+	// Validate payment currency
+	if request.PaymentCurrency != "USD" && request.PaymentCurrency != "EUR" && request.PaymentCurrency != "GBP" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid payment currency"})
+		return
+	}
+
+	err := h.service.PurchaseTierPackage(
+		userID.(uuid.UUID),
+		request.TierLevel,
+		request.DurationMonths,
+		request.PaymentMethod,
+		request.PaymentCurrency,
+	)
+
+	if err != nil {
+		// Log error details
+		fmt.Printf("Tier purchase error: %v\n", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Tier package purchased successfully",
+	})
+}
+
+func (h *Handler) GetUserTierHistory(c *gin.Context) {
+	userID, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+		return
+	}
+
+	limitStr := c.DefaultQuery("limit", "10")
+	limit, err := strconv.Atoi(limitStr)
+	if err != nil {
+		limit = 10
+	}
+
+	purchases, err := h.service.GetUserTierPurchases(userID.(uuid.UUID), limit)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"purchases": purchases,
+		"count":     len(purchases),
+		"message":   "Tier purchase history retrieved successfully",
+	})
+}
+
+// Admin endpoint to manually check and reset expired tiers
+func (h *Handler) CheckExpiredTiers(c *gin.Context) {
+	// Check if user is admin (you might want to add admin middleware)
+	_, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+		return
+	}
+
+	// TODO: Add admin check here
+	// For now, allow any authenticated user to run this
+
+	count, err := h.service.CheckAndResetAllExpiredTiers()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": fmt.Sprintf("Checked and reset %d expired tiers", count),
+		"count":   count,
+	})
+}
+
+// Google Play Billing endpoints
+
+// POST /api/v1/menu/google-play/verify-purchase
+func (h *Handler) VerifyGooglePlayPurchase(c *gin.Context) {
+	userID, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+		return
+	}
+
+	var req PurchaseVerificationRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Process the Google Play purchase
+	err := h.googlePlayBilling.ProcessGooglePlayPurchase(userID.(uuid.UUID), req)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Acknowledge the purchase with Google Play
+	if err := h.googlePlayBilling.AcknowledgePurchase(req.PurchaseToken, req.ProductID); err != nil {
+		// Log error but don't fail the request
+		fmt.Printf("Failed to acknowledge purchase: %v\n", err)
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message":        "Google Play purchase verified and processed successfully",
+		"purchase_token": req.PurchaseToken,
+		"product_id":     req.ProductID,
+	})
+}
+
+// POST /api/v1/menu/google-play/verify-subscription
+func (h *Handler) VerifyGooglePlaySubscription(c *gin.Context) {
+	userID, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+		return
+	}
+
+	var req PurchaseVerificationRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Process the Google Play subscription
+	err := h.googlePlayBilling.ProcessGooglePlaySubscription(userID.(uuid.UUID), req)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Acknowledge the subscription with Google Play
+	if err := h.googlePlayBilling.AcknowledgeSubscription(req.PurchaseToken, req.ProductID); err != nil {
+		// Log error but don't fail the request
+		fmt.Printf("Failed to acknowledge subscription: %v\n", err)
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message":        "Google Play subscription verified and processed successfully",
+		"purchase_token": req.PurchaseToken,
+		"product_id":     req.ProductID,
 	})
 }

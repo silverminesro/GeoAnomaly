@@ -464,3 +464,163 @@ func (s *Service) GetUserEssencePurchases(userID uuid.UUID, limit int) ([]UserEs
 	err := s.db.Preload("EssencePackage").Where("user_id = ?", userID).Order("created_at DESC").Limit(limit).Find(&purchases).Error
 	return purchases, err
 }
+
+// Tier purchase model (zjednodušený)
+type UserTierPurchase struct {
+	ID              uuid.UUID    `json:"id" gorm:"type:uuid;primary_key;default:gen_random_uuid()"`
+	CreatedAt       time.Time    `json:"created_at"`
+	UpdatedAt       time.Time    `json:"updated_at"`
+	DeletedAt       *time.Time   `json:"deleted_at,omitempty" gorm:"index"`
+	UserID          uuid.UUID    `json:"user_id" gorm:"not null"`
+	TierLevel       int          `json:"tier_level" gorm:"not null"`
+	DurationMonths  int          `json:"duration_months" gorm:"not null"`
+	ExpiresAt       time.Time    `json:"expires_at" gorm:"not null"` // Pridané
+	PaymentMethod   string       `json:"payment_method" gorm:"not null"`
+	PaymentCurrency string       `json:"payment_currency" gorm:"not null"`
+	PaymentAmount   int          `json:"payment_amount" gorm:"not null"` // v centoch
+	PaymentStatus   string       `json:"payment_status" gorm:"not null;default:'pending'"`
+	TransactionID   uuid.UUID    `json:"transaction_id" gorm:"not null"`
+	Properties      common.JSONB `json:"properties,omitempty" gorm:"type:jsonb;default:'{}'::jsonb"`
+
+	// Relationships
+	User        *common.User `json:"user,omitempty" gorm:"foreignKey:UserID"`
+	Transaction *Transaction `json:"transaction,omitempty" gorm:"foreignKey:TransactionID"`
+}
+
+// Purchase tier package (zjednodušený)
+func (s *Service) PurchaseTierPackage(userID uuid.UUID, tierLevel int, durationMonths int, paymentMethod string, paymentCurrency string) error {
+	// Get tier definition
+	var tierDef struct {
+		TierLevel    int     `json:"tier_level"`
+		TierName     string  `json:"tier_name"`
+		PriceMonthly float64 `json:"price_monthly"` // Zmenené späť na float64 pre decimal
+	}
+
+	err := s.db.Table("tier_definitions").
+		Where("tier_level = ?", tierLevel).
+		First(&tierDef).Error
+
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return errors.New("tier not found")
+		}
+		return err
+	}
+
+	// Calculate total price (price_monthly je v centoch, konvertujeme na int)
+	totalPrice := int(tierDef.PriceMonthly * float64(durationMonths))
+
+	// Calculate expiration date
+	expiresAt := time.Now().AddDate(0, durationMonths, 0)
+
+	return s.db.Transaction(func(tx *gorm.DB) error {
+		// Create transaction record
+		transaction := Transaction{
+			UserID:        userID,
+			Type:          TransactionTypePurchase,
+			CurrencyType:  paymentCurrency,
+			Amount:        -totalPrice, // Negative because it's a purchase
+			BalanceBefore: 0,
+			BalanceAfter:  0,
+			Description:   fmt.Sprintf("Tier upgrade: %s for %d months", tierDef.TierName, durationMonths),
+		}
+
+		if err := tx.Create(&transaction).Error; err != nil {
+			return err
+		}
+
+		// Create tier purchase record
+		purchase := UserTierPurchase{
+			UserID:          userID,
+			TierLevel:       tierLevel,
+			DurationMonths:  durationMonths,
+			ExpiresAt:       expiresAt, // Pridané
+			PaymentMethod:   paymentMethod,
+			PaymentCurrency: paymentCurrency,
+			PaymentAmount:   totalPrice,
+			PaymentStatus:   "completed",
+			TransactionID:   transaction.ID,
+		}
+
+		if err := tx.Create(&purchase).Error; err != nil {
+			return err
+		}
+
+		// Update user tier and expiration (používa existujúce polia!)
+		if err := tx.Model(&common.User{}).
+			Where("id = ?", userID).
+			Updates(map[string]interface{}{
+				"tier":         tierLevel,
+				"tier_expires": expiresAt,
+			}).Error; err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
+// Get user tier purchase history
+func (s *Service) GetUserTierPurchases(userID uuid.UUID, limit int) ([]UserTierPurchase, error) {
+	var purchases []UserTierPurchase
+	err := s.db.Preload("Transaction").
+		Where("user_id = ?", userID).
+		Order("created_at DESC").
+		Limit(limit).
+		Find(&purchases).Error
+	return purchases, err
+}
+
+// Check and reset expired tier for a user
+func (s *Service) CheckAndResetExpiredTier(userID uuid.UUID) error {
+	var user common.User
+	err := s.db.First(&user, userID).Error
+	if err != nil {
+		return err
+	}
+
+	// Ak má tier a je expirovaný
+	if user.Tier > 0 && user.TierExpires != nil && user.TierExpires.Before(time.Now()) {
+		// Reset na tier 0
+		return s.db.Model(&common.User{}).
+			Where("id = ?", userID).
+			Updates(map[string]interface{}{
+				"tier":         0,
+				"tier_expires": nil,
+			}).Error
+	}
+
+	return nil
+}
+
+// Batch check and reset all expired tiers (pre admin endpoint)
+func (s *Service) CheckAndResetAllExpiredTiers() (int, error) {
+	var count int64
+
+	err := s.db.Transaction(func(tx *gorm.DB) error {
+		// Nájdeme všetkých userov s expirovaným tier
+		var users []common.User
+		err := tx.Where("tier > 0 AND tier_expires < ?", time.Now()).Find(&users).Error
+		if err != nil {
+			return err
+		}
+
+		count = int64(len(users))
+
+		// Reset na tier 0
+		if count > 0 {
+			if err := tx.Model(&common.User{}).
+				Where("tier > 0 AND tier_expires < ?", time.Now()).
+				Updates(map[string]interface{}{
+					"tier":         0,
+					"tier_expires": nil,
+				}).Error; err != nil {
+				return err
+			}
+		}
+
+		return nil
+	})
+
+	return int(count), err
+}
