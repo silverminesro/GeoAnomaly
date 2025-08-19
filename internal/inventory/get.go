@@ -11,6 +11,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 // GET /api/v1/inventory/items
@@ -127,7 +128,17 @@ func (h *Handler) GetInventory(c *gin.Context) {
 				itemData["image_url"] = fmt.Sprintf("/api/v1/media/gear/%s", gearType)
 			}
 
-			// Add equipped status for gear
+			// ✅ PRIDANÉ: Skontroluj či je item skutočne vybavený v loadoute
+			var isEquipped bool
+			if itemTypeStr == "gear" {
+				// Check if this item is equipped in loadout
+				var loadoutCount int64
+				h.db.Model(&gorm.Model{}).Table("loadout_items").Where("user_id = ? AND item_id = ?", userID, rawItem["item_id"]).Count(&loadoutCount)
+				isEquipped = loadoutCount > 0
+			}
+			itemData["is_equipped"] = isEquipped
+
+			// Keep existing equipped field from properties for backward compatibility
 			if equipped, ok := properties["equipped"].(bool); ok {
 				itemData["equipped"] = equipped
 			}
