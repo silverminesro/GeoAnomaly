@@ -1,6 +1,7 @@
 package loadout
 
 import (
+	"encoding/json"
 	"log"
 	"net/http"
 
@@ -67,6 +68,10 @@ func (h *Handler) GetUserLoadout(c *gin.Context) {
 		"success": true,
 		"loadout": loadout,
 	}
+
+	// Debug: log the actual JSON response
+	jsonData, _ := json.Marshal(response)
+	log.Printf("🔧 JSON Response: %s", string(jsonData))
 
 	c.JSON(http.StatusOK, response)
 }
