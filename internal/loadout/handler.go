@@ -1,6 +1,7 @@
 package loadout
 
 import (
+	"log"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -55,10 +56,19 @@ func (h *Handler) GetUserLoadout(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
+	// Debug logging
+	log.Printf("🔧 GetUserLoadout: user=%s, loadout_items=%d", userUUID, len(loadout))
+	for slotID, item := range loadout {
+		log.Printf("🔧 Slot %s: item_id=%s, item_type=%s, durability=%d/%d",
+			slotID, item.ItemID, item.ItemType, item.Durability, item.MaxDurability)
+	}
+
+	response := gin.H{
 		"success": true,
 		"loadout": loadout,
-	})
+	}
+
+	c.JSON(http.StatusOK, response)
 }
 
 // EquipItem vybaví gear na daný slot
