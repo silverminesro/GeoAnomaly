@@ -155,7 +155,8 @@ func (s *Service) RepairItem(userID uuid.UUID, slotID string, repairAmount int) 
 		loadoutItem.Durability = min(loadoutItem.Durability+repairAmount, loadoutItem.MaxDurability)
 	}
 
-	loadoutItem.LastRepaired = time.Now()
+	now := time.Now()
+	loadoutItem.LastRepaired = &now
 	return s.db.Model(&loadoutItem).Updates(map[string]interface{}{
 		"durability":    loadoutItem.Durability,
 		"last_repaired": loadoutItem.LastRepaired,
