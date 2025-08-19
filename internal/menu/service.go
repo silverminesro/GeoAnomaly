@@ -20,6 +20,7 @@ var (
 	ErrInvalidCurrency   = errors.New("invalid currency type")
 	ErrPackageNotFound   = errors.New("essence package not found")
 	ErrPaymentFailed     = errors.New("payment failed")
+	ErrItemEquipped      = errors.New("cannot sell equipped item - unequip it first")
 )
 
 type Service struct {
@@ -378,6 +379,17 @@ func (s *Service) SellInventoryItem(userID uuid.UUID, inventoryItemID uuid.UUID)
 
 	if inventoryItem.UserID != userID {
 		return errors.New("item does not belong to user")
+	}
+
+	// ✅ PRIDANÉ: Skontroluj či je item vybavený v loadoute
+	var loadoutItem common.LoadoutItem
+	err = s.db.Where("user_id = ? AND item_id = ?", userID, inventoryItem.ItemID).First(&loadoutItem).Error
+	if err == nil {
+		// Item je vybavený v loadoute
+		return ErrItemEquipped
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		// Iná chyba
+		return err
 	}
 
 	// Calculate sell price based on item type and rarity

@@ -244,6 +244,8 @@ func (h *Handler) SellInventoryItem(c *gin.Context) {
 		switch err {
 		case ErrItemNotFound:
 			c.JSON(http.StatusNotFound, gin.H{"error": "Item not found"})
+		case ErrItemEquipped:
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Cannot sell equipped item - unequip it first"})
 		default:
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		}
