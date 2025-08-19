@@ -301,6 +301,7 @@ func setupRoutes(db *gorm.DB, redisClient *redis.Client, r2Client *media.R2Clien
 		{
 			mediaRoutes.GET("/image/:filename", mediaHandler.GetImage)
 			mediaRoutes.GET("/artifact/:type", mediaHandler.GetArtifactImage)
+			mediaRoutes.GET("/gear/:type", mediaHandler.GetGearImage)
 		}
 		log.Println("✅ Media routes registered: /api/v1/media/*")
 	}
@@ -563,6 +564,7 @@ func setupRoutes(db *gorm.DB, redisClient *redis.Client, r2Client *media.R2Clien
 				mediaEndpoints = gin.H{
 					"GET /media/image/{filename}": "🖼️ Get image by filename",
 					"GET /media/artifact/{type}":  "🎨 Get artifact image by type",
+					"GET /media/gear/{type}":      "⚔️ Get gear image by type",
 				}
 			}
 

@@ -100,3 +100,43 @@ func (h *Handler) GetImage(c *gin.Context) {
 
 	c.Data(http.StatusOK, contentType, imageData)
 }
+
+// GetGearImage streamuje obrázok pre daný typ gear
+func (h *Handler) GetGearImage(c *gin.Context) {
+	gearType := c.Param("type")
+
+	// ✅ PRIDANÉ: Debug logging
+	log.Printf("🖼️ GetGearImage called with type: %s", gearType)
+	log.Printf("🔍 Request URL: %s", c.Request.URL.Path)
+	log.Printf("🔍 Request method: %s", c.Request.Method)
+	log.Printf("🔑 Authorization header present: %v", c.GetHeader("Authorization") != "")
+
+	// Získaj dáta obrázka
+	imageData, contentType, err := h.service.GetGearImageData(c.Request.Context(), gearType)
+	if err != nil {
+		log.Printf("❌ Failed to get gear image data: %v", err)
+		c.JSON(http.StatusNotFound, gin.H{
+			"error":   "Gear image not found",
+			"type":    gearType,
+			"details": err.Error(),
+		})
+		return
+	}
+
+	log.Printf("✅ Gear image data retrieved: %d bytes, type: %s", len(imageData), contentType)
+
+	// Nastav cache headers pre browser
+	c.Header("Cache-Control", "public, max-age=3600") // 1 hodina
+	c.Header("ETag", fmt.Sprintf(`"%s"`, gearType))
+
+	// Skontroluj If-None-Match header
+	if match := c.GetHeader("If-None-Match"); match == fmt.Sprintf(`"%s"`, gearType) {
+		log.Printf("📄 Returning 304 Not Modified")
+		c.Status(http.StatusNotModified)
+		return
+	}
+
+	log.Printf("✅ Sending gear image: %d bytes", len(imageData))
+	// Pošli obrázok
+	c.Data(http.StatusOK, contentType, imageData)
+}

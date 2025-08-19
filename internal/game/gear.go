@@ -379,3 +379,53 @@ func (gs *GearService) FilterGearByTier(gear []common.Gear, userTier int) []comm
 	}
 	return filtered
 }
+
+// GetGearImageFilename vráti názov súboru pre gear obrázok
+func GetGearImageFilename(gearType string) string {
+	imageMap := map[string]string{
+		// Head gear
+		"tactical_cap":     "tactical_cap.jpg",
+		"military_helmet":  "military_helmet.jpg",
+		"hazmat_hood":      "hazmat_hood.jpg",
+
+		// Face gear
+		"sunglasses":       "sunglasses.jpg",
+		"gas_mask":         "gas_mask.jpg",
+
+		// Body gear
+		"leather_jacket":   "leather_jacket.jpg",
+		"tactical_vest":    "tactical_vest.jpg",
+		"explosive_vest":   "explosive_vest.jpg",
+		"bulletproof_vest": "bulletproof_vest.jpg",
+		"hazmat_suit":      "hazmat_suit.jpg",
+
+		// Hands gear
+		"combat_gloves":    "combat_gloves.jpg",
+		"tactical_gloves":  "tactical_gloves.jpg",
+		"hazmat_gloves":    "hazmat_gloves.jpg",
+
+		// Legs gear
+		"combat_pants":     "combat_pants.jpg",
+		"tactical_pants":   "tactical_pants.jpg",
+		"hazmat_pants":     "hazmat_pants.jpg",
+
+		// Feet gear
+		"combat_boots":     "combat_boots.jpg",
+		"tactical_boots":   "tactical_boots.jpg",
+		"hazmat_boots":     "hazmat_boots.jpg",
+
+		// Scanner gear
+		"basic_scanner":    "basic_scanner.jpg",
+		"advanced_scanner": "advanced_scanner.jpg",
+		"quantum_scanner":  "quantum_scanner.jpg",
+		"artifact_scanner": "artifact_scanner.jpg",
+
+		// Night vision
+		"night_vision_goggles": "night_vision_goggles.jpg",
+	}
+
+	if filename, exists := imageMap[gearType]; exists {
+		return filename
+	}
+	return "default_gear.jpg" // fallback
+}

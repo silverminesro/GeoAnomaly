@@ -35,6 +35,45 @@ func (s *Service) GetArtifactImageData(ctx context.Context, artifactType string)
 	return s.GetImageData(ctx, filename)
 }
 
+// GetGearImageData získa dáta obrázka pre daný typ gear
+func (s *Service) GetGearImageData(ctx context.Context, gearType string) ([]byte, string, error) {
+	filename, exists := s.GetGearImage(gearType)
+	if !exists {
+		return nil, "", fmt.Errorf("gear type not found: %s", gearType)
+	}
+
+	// Skontroluj cache (30 minút)
+	if cached, ok := s.cache[filename]; ok {
+		if time.Since(cached.cachedAt) < 30*time.Minute {
+			return cached.data, cached.contentType, nil
+		}
+		delete(s.cache, filename) // Vymaž expirovanú cache
+	}
+
+	// Stiahni z R2 - gear obrázky sú v gear/ priečinku
+	key := fmt.Sprintf("gear/%s", filename)
+	body, contentType, err := s.r2Client.GetObject(ctx, key)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to get gear image from R2: %w", err)
+	}
+	defer body.Close()
+
+	// Prečítaj dáta
+	data, err := io.ReadAll(body)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to read gear image data: %w", err)
+	}
+
+	// Ulož do cache
+	s.cache[filename] = cachedImage{
+		data:        data,
+		contentType: contentType,
+		cachedAt:    time.Now(),
+	}
+
+	return data, contentType, nil
+}
+
 // GetImageData získa dáta obrázka z R2 (s cache)
 func (s *Service) GetImageData(ctx context.Context, filename string) ([]byte, string, error) {
 	// Skontroluj cache (30 minút)
