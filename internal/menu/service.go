@@ -381,9 +381,9 @@ func (s *Service) SellInventoryItem(userID uuid.UUID, inventoryItemID uuid.UUID)
 		return errors.New("item does not belong to user")
 	}
 
-	// ✅ PRIDANÉ: Skontroluj či je item vybavený v loadoute
+	// ✅ OPRAVENÉ: Skontroluj či je item vybavený v loadoute
 	var loadoutItem common.LoadoutItem
-	err = s.db.Where("user_id = ? AND item_id = ?", userID, inventoryItem.ItemID).First(&loadoutItem).Error
+	err = s.db.Where("user_id = ? AND item_id = ?", userID, inventoryItem.ID).First(&loadoutItem).Error
 	if err == nil {
 		// Item je vybavený v loadoute
 		return ErrItemEquipped
