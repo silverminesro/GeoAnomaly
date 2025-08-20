@@ -130,9 +130,9 @@ func (s *Service) findItemsInRange(userID uuid.UUID, lat, lon, heading float64, 
 	// 1. Skontroluj či je hráč v aktívnej zóne
 	activeZone, err := s.getActiveZoneForPlayer(userID)
 	if err != nil || activeZone == nil {
-		// Hráč nie je v zóne - scanner beží, ale nič nenájde
-		log.Printf("🔍 [SCANNER] User %s scanned outside of active zone - no items found", userID)
-		return []ScanResult{}, nil
+		// Hráč nie je v zóne - scanner vyžaduje enter zone
+		log.Printf("🔍 [SCANNER] User %s scanned outside of active zone - must enter zone first", userID)
+		return nil, fmt.Errorf("must enter zone first to use scanner")
 	}
 
 	// 2. Hráč je v zóne - hľadaj items v zóne

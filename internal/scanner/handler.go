@@ -69,6 +69,14 @@ func (h *Handler) Scan(c *gin.Context) {
 
 	response, err := h.service.Scan(userUUID, &req)
 	if err != nil {
+		// Ak je chyba "must enter zone first", vráť 400 Bad Request
+		if err.Error() == "must enter zone first to use scanner" {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error":   "Must enter zone first",
+				"message": "You must enter a zone before using the scanner",
+			})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
