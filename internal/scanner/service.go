@@ -23,28 +23,38 @@ func NewService(db *gorm.DB) *Service {
 
 // GetBasicScanner - vráti základný scanner pre hráča
 func (s *Service) GetBasicScanner() (*ScannerCatalog, error) {
-	// TODO: Implement with GORM when scanner tables are migrated
-	return &ScannerCatalog{
-		Code:        "echovane_mk0",
-		Name:        "EchoVane Mk.0",
-		Tagline:     "Základný sektorový skener",
-		Description: "Minimalistický ručný pinger s 30° zorným klinom. Vždy ťa vedie k najbližšiemu nálezu.",
-		BaseRangeM:  100,
-		BaseFovDeg:  30,
-		CapsJSON: ScannerCaps{
-			RangePctMax:     40,
-			FovPctMax:       50,
-			ServerPollHzMax: 2.0,
-		},
-		DrainMult:      1.0,
-		IsBasic:        true,
-		MaxRarity:      "rare",        // Základný scanner môže detekovať len common a rare
-		DetectArtifacts: true,         // Môže detekovať artefakty
-		DetectGear:     true,          // Môže detekovať gear
-		Version:        1,
-		CreatedAt:      time.Now(),
-		UpdatedAt:      time.Now(),
-	}, nil
+	var scanner ScannerCatalog
+	
+	// Načítaj scanner z databázy
+	if err := s.db.Where("code = ? AND is_basic = true", "echovane_mk0").First(&scanner).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			// Fallback na hardcoded hodnoty ak scanner neexistuje v DB
+			return &ScannerCatalog{
+				Code:        "echovane_mk0",
+				Name:        "EchoVane Mk.0",
+				Tagline:     "Základný sektorový skener",
+				Description: "Minimalistický ručný pinger s 30° zorným klinom. Vždy ťa vedie k najbližšiemu nálezu.",
+				BaseRangeM:  50,
+				BaseFovDeg:  30,
+				CapsJSON: ScannerCaps{
+					RangePctMax:     40,
+					FovPctMax:       50,
+					ServerPollHzMax: 2.0,
+				},
+				DrainMult:      1.0,
+				IsBasic:        true,
+				MaxRarity:      "rare",        // Základný scanner môže detekovať len common a rare
+				DetectArtifacts: true,         // Môže detekovať artefakty
+				DetectGear:     true,          // Môže detekovať gear
+				Version:        1,
+				CreatedAt:      time.Now(),
+				UpdatedAt:      time.Now(),
+			}, nil
+		}
+		return nil, fmt.Errorf("failed to load scanner from database: %w", err)
+	}
+	
+	return &scanner, nil
 }
 
 // GetOrCreateScannerInstance - vráti alebo vytvorí scanner inštanciu pre hráča
