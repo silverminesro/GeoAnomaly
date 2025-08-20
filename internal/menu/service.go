@@ -256,22 +256,38 @@ func (s *Service) PurchaseMarketItem(userID uuid.UUID, itemID uuid.UUID, quantit
 			return err
 		}
 
-		// ✅ PRIDANÉ: Pridaj predmet do inventára
+		// ✅ PRIDANÉ: Pridaj predmet do inventára a skopíruj vlastnosti z MarketItem.Properties
+		baseProperties := common.JSONB{
+			"name":           item.Name,
+			"type":           item.Type,
+			"category":       item.Category,
+			"rarity":         item.Rarity,
+			"level":          item.Level,
+			"purchased_at":   time.Now().Unix(),
+			"purchased_from": "market",
+			"market_item_id": itemID.String(),
+		}
+
+		// Merge všetkých vlastností z MarketItem.Properties do inventory itemu
+		if item.Properties != nil {
+			for k, v := range item.Properties {
+				baseProperties[k] = v
+			}
+		}
+
+		// Ak chýba slot a kategória je scanner/scanners, doplň slot="scanner"
+		if _, ok := baseProperties["slot"]; !ok {
+			if item.Category == "scanner" || item.Category == "scanners" {
+				baseProperties["slot"] = "scanner"
+			}
+		}
+
 		inventoryItem := common.InventoryItem{
-			UserID:   userID,
-			ItemType: item.Type,
-			ItemID:   item.ID,
-			Quantity: quantity,
-			Properties: common.JSONB{
-				"name":           item.Name,
-				"type":           item.Type,
-				"category":       item.Category,
-				"rarity":         item.Rarity,
-				"level":          item.Level,
-				"purchased_at":   time.Now().Unix(),
-				"purchased_from": "market",
-				"market_item_id": itemID.String(),
-			},
+			UserID:     userID,
+			ItemType:   item.Type,
+			ItemID:     item.ID,
+			Quantity:   quantity,
+			Properties: baseProperties,
 		}
 
 		if err := tx.Create(&inventoryItem).Error; err != nil {
