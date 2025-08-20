@@ -1,6 +1,7 @@
 package scanner
 
 import (
+	"math"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -59,6 +60,11 @@ func (h *Handler) Scan(c *gin.Context) {
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body: " + err.Error()})
 		return
+	}
+
+	// Validácia heading hodnoty - ak je NaN alebo Infinity, použij 0.0
+	if math.IsNaN(req.Heading) || math.IsInf(req.Heading, 0) {
+		req.Heading = 0.0
 	}
 
 	response, err := h.service.Scan(userUUID, &req)

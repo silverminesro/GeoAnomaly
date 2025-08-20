@@ -165,7 +165,7 @@ type ScannerStats struct {
 type ScanRequest struct {
 	Latitude  float64 `json:"latitude" binding:"required"`
 	Longitude float64 `json:"longitude" binding:"required"`
-	Heading   float64 `json:"heading" binding:"required"`
+	Heading   float64 `json:"heading"` // Odstránené required, lebo 0.0 je platná hodnota
 }
 
 // ScanResponse - response zo skenovania
