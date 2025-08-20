@@ -23,6 +23,10 @@ type ScannerCatalog struct {
 	SlotCount      int         `json:"slot_count" db:"slot_count"`
 	SlotTypes      []string    `json:"slot_types" db:"slot_types"`
 	IsBasic        bool        `json:"is_basic" db:"is_basic"`
+	// Scanner detection capabilities
+	MaxRarity      string      `json:"max_rarity" db:"max_rarity"`           // Najvyššia rarity ktorú môže detekovať
+	DetectArtifacts bool       `json:"detect_artifacts" db:"detect_artifacts"` // Môže detekovať artefakty
+	DetectGear     bool        `json:"detect_gear" db:"detect_gear"`         // Môže detekovať gear
 	Version        int         `json:"version" db:"version"`
 	EffectiveFrom  time.Time   `json:"effective_from" db:"effective_from"`
 	CreatedAt      time.Time   `json:"created_at" db:"created_at"`

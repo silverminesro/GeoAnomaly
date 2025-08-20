@@ -36,11 +36,14 @@ func (s *Service) GetBasicScanner() (*ScannerCatalog, error) {
 			FovPctMax:       50,
 			ServerPollHzMax: 2.0,
 		},
-		DrainMult: 1.0,
-		IsBasic:   true,
-		Version:   1,
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
+		DrainMult:      1.0,
+		IsBasic:        true,
+		MaxRarity:      "rare",        // Základný scanner môže detekovať len common a rare
+		DetectArtifacts: true,         // Môže detekovať artefakty
+		DetectGear:     true,          // Môže detekovať gear
+		Version:        1,
+		CreatedAt:      time.Now(),
+		UpdatedAt:      time.Now(),
 	}, nil
 }
 
@@ -137,7 +140,15 @@ func (s *Service) findItemsInRange(userID uuid.UUID, lat, lon, heading float64, 
 
 	// 2. Hráč je v zóne - hľadaj items v zóne
 	log.Printf("🔍 [SCANNER] User %s scanning in zone %s", userID, activeZone.ID)
-	return s.findItemsInZone(activeZone.ID, lat, lon, heading, stats)
+	
+	// Získaj scanner inštanciu pre detaily
+	scannerInstance, err := s.GetOrCreateScannerInstance(userID)
+	if err != nil {
+		log.Printf("🔍 [SCANNER] Failed to get scanner instance: %v", err)
+		return s.findItemsInZone(activeZone.ID, lat, lon, heading, stats, nil)
+	}
+	
+	return s.findItemsInZone(activeZone.ID, lat, lon, heading, stats, scannerInstance)
 }
 
 // getActiveZoneForPlayer - získa aktívnu zónu pre hráča
@@ -166,81 +177,112 @@ func (s *Service) getActiveZoneForPlayer(userID uuid.UUID) (*common.Zone, error)
 }
 
 // findItemsInZone - nájde items v zóne
-func (s *Service) findItemsInZone(zoneID uuid.UUID, lat, lon, heading float64, stats *ScannerStats) ([]ScanResult, error) {
+func (s *Service) findItemsInZone(zoneID uuid.UUID, lat, lon, heading float64, stats *ScannerStats, scannerInstance *ScannerInstance) ([]ScanResult, error) {
 	var results []ScanResult
 
-	// 1. Nájdi artefakty v zóne
-	var artifacts []common.Artifact
-	if err := s.db.Where("zone_id = ? AND is_active = true", zoneID).Find(&artifacts).Error; err != nil {
-		log.Printf("🔍 [SCANNER] Failed to load artifacts for zone %s: %v", zoneID, err)
-		return results, nil
+	// Získaj scanner schopnosti
+	scannerMaxRarity := "common" // Default
+	detectArtifacts := true      // Default
+	detectGear := true           // Default
+
+	if scannerInstance != nil && scannerInstance.Scanner != nil {
+		scannerMaxRarity = scannerInstance.Scanner.MaxRarity
+		detectArtifacts = scannerInstance.Scanner.DetectArtifacts
+		detectGear = scannerInstance.Scanner.DetectGear
 	}
 
-	// 2. Nájdi gear items v zóne
-	var gear []common.Gear
-	if err := s.db.Where("zone_id = ? AND is_active = true", zoneID).Find(&gear).Error; err != nil {
-		log.Printf("🔍 [SCANNER] Failed to load gear for zone %s: %v", zoneID, err)
-		return results, nil
-	}
+	log.Printf("🔍 [SCANNER] Scanner capabilities - MaxRarity: %s, DetectArtifacts: %v, DetectGear: %v", 
+		scannerMaxRarity, detectArtifacts, detectGear)
 
-	log.Printf("🔍 [SCANNER] Zone %s has %d artifacts and %d gear items", zoneID, len(artifacts), len(gear))
+	// 1. Nájdi artefakty v zóne (ak scanner môže detekovať artefakty)
+	if detectArtifacts {
+		var artifacts []common.Artifact
+		if err := s.db.Where("zone_id = ? AND is_active = true", zoneID).Find(&artifacts).Error; err != nil {
+			log.Printf("🔍 [SCANNER] Failed to load artifacts for zone %s: %v", zoneID, err)
+		} else {
+			log.Printf("🔍 [SCANNER] Found %d artifacts in zone", len(artifacts))
 
-	// 3. Spracuj artefakty
-	for _, artifact := range artifacts {
-		distance := s.calculateDistance(lat, lon, artifact.Location.Latitude, artifact.Location.Longitude)
+			// Spracuj artefakty
+			for _, artifact := range artifacts {
+				// Skontroluj či scanner môže detekovať túto rarity
+				if !s.canDetectRarity(scannerMaxRarity, artifact.Rarity) {
+					log.Printf("🔍 [SCANNER] Skipping %s artifact (rarity: %s, scanner max: %s)", 
+						artifact.Name, artifact.Rarity, scannerMaxRarity)
+					continue
+				}
 
-		// Len items do 50m
-		if distance > 50 {
-			continue
+				distance := s.calculateDistance(lat, lon, artifact.Location.Latitude, artifact.Location.Longitude)
+
+				// Len items do 50m
+				if distance > 50 {
+					continue
+				}
+
+				bearing := s.calculateBearing(lat, lon, artifact.Location.Latitude, artifact.Location.Longitude)
+
+				// Základný signal strength
+				signalStrength := s.calculateSignalStrength(distance, stats.RangeM, bearing, heading, float64(stats.FovDeg))
+
+				// Pridaj rušenie - čím ďalej, tým väčšie rušenie
+				signalStrength = s.addSignalNoise(signalStrength, int(distance))
+
+				results = append(results, ScanResult{
+					Type:           "artifact",
+					DistanceM:      distance,
+					BearingDeg:     bearing,
+					SignalStrength: signalStrength,
+					Name:           artifact.Name,
+					Rarity:         artifact.Rarity,
+					ItemID:         &artifact.ID,
+				})
+
+				log.Printf("🔍 [SCANNER] Detected artifact: %s (rarity: %s, distance: %.1fm)", 
+					artifact.Name, artifact.Rarity, distance)
+			}
 		}
-
-		bearing := s.calculateBearing(lat, lon, artifact.Location.Latitude, artifact.Location.Longitude)
-
-		// Základný signal strength
-		signalStrength := s.calculateSignalStrength(distance, stats.RangeM, bearing, heading, float64(stats.FovDeg))
-
-		// Pridaj rušenie - čím ďalej, tým väčšie rušenie
-		signalStrength = s.addSignalNoise(signalStrength, distance)
-
-		results = append(results, ScanResult{
-			Type:           "artifact",
-			DistanceM:      distance,
-			BearingDeg:     bearing,
-			SignalStrength: signalStrength,
-			Name:           artifact.Name,
-			Rarity:         artifact.Rarity,
-			ItemID:         &artifact.ID,
-		})
 	}
 
-	// 4. Spracuj gear items
-	for _, gearItem := range gear {
-		distance := s.calculateDistance(lat, lon, gearItem.Location.Latitude, gearItem.Location.Longitude)
+	// 2. Nájdi gear items v zóne (ak scanner môže detekovať gear)
+	if detectGear {
+		var gear []common.Gear
+		if err := s.db.Where("zone_id = ? AND is_active = true", zoneID).Find(&gear).Error; err != nil {
+			log.Printf("🔍 [SCANNER] Failed to load gear for zone %s: %v", zoneID, err)
+		} else {
+			log.Printf("🔍 [SCANNER] Found %d gear items in zone", len(gear))
 
-		// Len items do 50m
-		if distance > 50 {
-			continue
+			// Spracuj gear items
+			for _, gearItem := range gear {
+				distance := s.calculateDistance(lat, lon, gearItem.Location.Latitude, gearItem.Location.Longitude)
+
+				// Len items do 50m
+				if distance > 50 {
+					continue
+				}
+
+				bearing := s.calculateBearing(lat, lon, gearItem.Location.Latitude, gearItem.Location.Longitude)
+
+				// Základný signal strength
+				signalStrength := s.calculateSignalStrength(distance, stats.RangeM, bearing, heading, float64(stats.FovDeg))
+
+				// Pridaj rušenie - čím ďalej, tým väčšie rušenie
+				signalStrength = s.addSignalNoise(signalStrength, int(distance))
+
+				results = append(results, ScanResult{
+					Type:           "gear",
+					DistanceM:      distance,
+					BearingDeg:     bearing,
+					SignalStrength: signalStrength,
+					Name:           gearItem.Name,
+					Rarity:         "common", // Gear nemá rarity v databáze, použijeme common
+					ItemID:         &gearItem.ID,
+				})
+
+				log.Printf("🔍 [SCANNER] Detected gear: %s (distance: %.1fm)", gearItem.Name, distance)
+			}
 		}
-
-		bearing := s.calculateBearing(lat, lon, gearItem.Location.Latitude, gearItem.Location.Longitude)
-
-		// Základný signal strength
-		signalStrength := s.calculateSignalStrength(distance, stats.RangeM, bearing, heading, float64(stats.FovDeg))
-
-		// Pridaj rušenie - čím ďalej, tým väčšie rušenie
-		signalStrength = s.addSignalNoise(signalStrength, distance)
-
-		results = append(results, ScanResult{
-			Type:           "gear",
-			DistanceM:      distance,
-			BearingDeg:     bearing,
-			SignalStrength: signalStrength,
-			Name:           gearItem.Name,
-			Rarity:         "common", // Gear nemá rarity v databáze, použijeme common
-			ItemID:         &gearItem.ID,
-		})
 	}
 
+	log.Printf("🔍 [SCANNER] Total items detected: %d", len(results))
 	return results, nil
 }
 
@@ -257,6 +299,27 @@ func (s *Service) addSignalNoise(signalStrength float64, distanceM int) float64 
 
 	// Obmedz na 0-1
 	return math.Max(0.0, math.Min(1.0, result))
+}
+
+// canDetectRarity - skontroluje či scanner môže detekovať danú rarity
+func (s *Service) canDetectRarity(scannerMaxRarity, itemRarity string) bool {
+	// Rarity hierarchy (od najnižšej po najvyššiu)
+	rarityLevels := map[string]int{
+		"common":    0,
+		"rare":      1,
+		"epic":      2,
+		"legendary": 3,
+	}
+
+	scannerLevel, scannerExists := rarityLevels[scannerMaxRarity]
+	itemLevel, itemExists := rarityLevels[itemRarity]
+
+	if !scannerExists || !itemExists {
+		return false // Neznáme rarity
+	}
+
+	// Scanner môže detekovať item ak je jeho max rarity >= item rarity
+	return scannerLevel >= itemLevel
 }
 
 // Helper functions remain the same
