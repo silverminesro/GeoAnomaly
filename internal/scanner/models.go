@@ -26,27 +26,32 @@ func (sa *StringArray) Scan(value interface{}) error {
 
 // ScannerCatalog - definícia scanner typu
 type ScannerCatalog struct {
-	ID             uuid.UUID   `json:"id" db:"id"`
-	Code           string      `json:"code" db:"code"`
+	ID             uuid.UUID   `json:"id" db:"id" gorm:"primaryKey"`
+	Code           string      `json:"code" db:"code" gorm:"uniqueIndex"`
 	Name           string      `json:"name" db:"name"`
 	Tagline        string      `json:"tagline" db:"tagline"`
 	Description    string      `json:"description" db:"description"`
 	BaseRangeM     int         `json:"base_range_m" db:"base_range_m"`
 	BaseFovDeg     int         `json:"base_fov_deg" db:"base_fov_deg"`
-	CapsJSON       ScannerCaps `json:"caps_json" db:"caps_json"`
+	CapsJSON       ScannerCaps `json:"caps_json" db:"caps_json" gorm:"type:jsonb"`
 	DrainMult      float64     `json:"drain_mult" db:"drain_mult"`
-	AllowedModules StringArray `json:"allowed_modules" db:"allowed_modules"`
+	AllowedModules StringArray `json:"allowed_modules" db:"allowed_modules" gorm:"type:jsonb"`
 	SlotCount      int         `json:"slot_count" db:"slot_count"`
-	SlotTypes      StringArray `json:"slot_types" db:"slot_types"`
+	SlotTypes      StringArray `json:"slot_types" db:"slot_types" gorm:"type:jsonb"`
 	IsBasic        bool        `json:"is_basic" db:"is_basic"`
 	// Scanner detection capabilities
-	MaxRarity      string      `json:"max_rarity" db:"max_rarity"`           // Najvyššia rarity ktorú môže detekovať
-	DetectArtifacts bool       `json:"detect_artifacts" db:"detect_artifacts"` // Môže detekovať artefakty
-	DetectGear     bool        `json:"detect_gear" db:"detect_gear"`         // Môže detekovať gear
-	Version        int         `json:"version" db:"version"`
-	EffectiveFrom  time.Time   `json:"effective_from" db:"effective_from"`
-	CreatedAt      time.Time   `json:"created_at" db:"created_at"`
-	UpdatedAt      time.Time   `json:"updated_at" db:"updated_at"`
+	MaxRarity       string    `json:"max_rarity" db:"max_rarity"`             // Najvyššia rarity ktorú môže detekovať
+	DetectArtifacts bool      `json:"detect_artifacts" db:"detect_artifacts"` // Môže detekovať artefakty
+	DetectGear      bool      `json:"detect_gear" db:"detect_gear"`           // Môže detekovať gear
+	Version         int       `json:"version" db:"version"`
+	EffectiveFrom   time.Time `json:"effective_from" db:"effective_from"`
+	CreatedAt       time.Time `json:"created_at" db:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at" db:"updated_at"`
+}
+
+// TableName - explicitne špecifikuje názov tabuľky pre GORM
+func (ScannerCatalog) TableName() string {
+	return "scanner_catalog"
 }
 
 // ScannerCaps - limity scanner
@@ -71,19 +76,24 @@ func (sc *ScannerCaps) Scan(value interface{}) error {
 
 // ModuleCatalog - definícia modulu
 type ModuleCatalog struct {
-	ID                 uuid.UUID     `json:"id" db:"id"`
-	Code               string        `json:"code" db:"code"`
+	ID                 uuid.UUID     `json:"id" db:"id" gorm:"primaryKey"`
+	Code               string        `json:"code" db:"code" gorm:"uniqueIndex"`
 	Name               string        `json:"name" db:"name"`
 	Type               string        `json:"type" db:"type"`
-	EffectsJSON        ModuleEffects `json:"effects_json" db:"effects_json"`
+	EffectsJSON        ModuleEffects `json:"effects_json" db:"effects_json" gorm:"type:jsonb"`
 	EnergyCost         int           `json:"energy_cost" db:"energy_cost"`
 	DrainMult          float64       `json:"drain_mult" db:"drain_mult"`
-	CompatibleScanners StringArray   `json:"compatible_scanners" db:"compatible_scanners"`
-	CraftJSON          *CraftRecipe  `json:"craft_json" db:"craft_json"`
+	CompatibleScanners StringArray   `json:"compatible_scanners" db:"compatible_scanners" gorm:"type:jsonb"`
+	CraftJSON          *CraftRecipe  `json:"craft_json" db:"craft_json" gorm:"type:jsonb"`
 	StorePrice         int           `json:"store_price" db:"store_price"`
 	Version            int           `json:"version" db:"version"`
 	CreatedAt          time.Time     `json:"created_at" db:"created_at"`
 	UpdatedAt          time.Time     `json:"updated_at" db:"updated_at"`
+}
+
+// TableName - explicitne špecifikuje názov tabuľky pre GORM
+func (ModuleCatalog) TableName() string {
+	return "module_catalog"
 }
 
 // ModuleEffects - účinky modulu
