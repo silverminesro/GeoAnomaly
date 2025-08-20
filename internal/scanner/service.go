@@ -42,6 +42,9 @@ func (s *Service) GetBasicScanner() (*ScannerCatalog, error) {
 					ServerPollHzMax: 2.0,
 				},
 				DrainMult:      1.0,
+				AllowedModules: StringArray{"mod_range_i", "mod_fov_i", "mod_response_i"},
+				SlotCount:      3,
+				SlotTypes:      StringArray{"power", "range", "fov"},
 				IsBasic:        true,
 				MaxRarity:      "rare",        // Základný scanner môže detekovať len common a rare
 				DetectArtifacts: true,         // Môže detekovať artefakty

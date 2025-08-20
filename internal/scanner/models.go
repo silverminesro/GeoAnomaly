@@ -8,6 +8,22 @@ import (
 	"github.com/google/uuid"
 )
 
+// StringArray - custom typ pre JSONB string arrays
+type StringArray []string
+
+// Value a Scan pre JSONB string arrays
+func (sa StringArray) Value() (driver.Value, error) {
+	return json.Marshal(sa)
+}
+
+func (sa *StringArray) Scan(value interface{}) error {
+	bytes, ok := value.([]byte)
+	if !ok {
+		return nil
+	}
+	return json.Unmarshal(bytes, sa)
+}
+
 // ScannerCatalog - definícia scanner typu
 type ScannerCatalog struct {
 	ID             uuid.UUID   `json:"id" db:"id"`
@@ -19,9 +35,9 @@ type ScannerCatalog struct {
 	BaseFovDeg     int         `json:"base_fov_deg" db:"base_fov_deg"`
 	CapsJSON       ScannerCaps `json:"caps_json" db:"caps_json"`
 	DrainMult      float64     `json:"drain_mult" db:"drain_mult"`
-	AllowedModules []string    `json:"allowed_modules" db:"allowed_modules"`
+	AllowedModules StringArray `json:"allowed_modules" db:"allowed_modules"`
 	SlotCount      int         `json:"slot_count" db:"slot_count"`
-	SlotTypes      []string    `json:"slot_types" db:"slot_types"`
+	SlotTypes      StringArray `json:"slot_types" db:"slot_types"`
 	IsBasic        bool        `json:"is_basic" db:"is_basic"`
 	// Scanner detection capabilities
 	MaxRarity      string      `json:"max_rarity" db:"max_rarity"`           // Najvyššia rarity ktorú môže detekovať
@@ -62,7 +78,7 @@ type ModuleCatalog struct {
 	EffectsJSON        ModuleEffects `json:"effects_json" db:"effects_json"`
 	EnergyCost         int           `json:"energy_cost" db:"energy_cost"`
 	DrainMult          float64       `json:"drain_mult" db:"drain_mult"`
-	CompatibleScanners []string      `json:"compatible_scanners" db:"compatible_scanners"`
+	CompatibleScanners StringArray   `json:"compatible_scanners" db:"compatible_scanners"`
 	CraftJSON          *CraftRecipe  `json:"craft_json" db:"craft_json"`
 	StorePrice         int           `json:"store_price" db:"store_price"`
 	Version            int           `json:"version" db:"version"`
