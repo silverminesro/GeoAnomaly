@@ -142,44 +142,59 @@ func (s *Service) findItemsInRange(userID uuid.UUID, lat, lon, heading float64, 
 
 // getActiveZoneForPlayer - získa aktívnu zónu pre hráča
 func (s *Service) getActiveZoneForPlayer(userID uuid.UUID) (*common.Zone, error) {
-	// TODO: Implement with GORM when scanner tables are migrated
-	// For now return mock zone for testing
-	return &common.Zone{
-		BaseModel: common.BaseModel{
-			ID: uuid.New(),
-		},
-		Name: "Test Zone",
-	}, nil
+	// Skontroluj PlayerSession pre aktuálnu zónu
+	var session common.PlayerSession
+	if err := s.db.Where("user_id = ?", userID).First(&session).Error; err != nil {
+		log.Printf("🔍 [SCANNER] User %s has no active session", userID)
+		return nil, nil // Hráč nie je v zóne
+	}
+
+	if session.CurrentZone == nil {
+		log.Printf("🔍 [SCANNER] User %s is not in any zone", userID)
+		return nil, nil // Hráč nie je v zóne
+	}
+
+	// Skontroluj či zóna existuje a je aktívna
+	var zone common.Zone
+	if err := s.db.Where("id = ? AND is_active = true", session.CurrentZone).First(&zone).Error; err != nil {
+		log.Printf("🔍 [SCANNER] User %s zone %s not found or inactive", userID, session.CurrentZone)
+		return nil, nil // Zóna neexistuje alebo nie je aktívna
+	}
+
+	log.Printf("🔍 [SCANNER] User %s is in active zone %s (%s)", userID, zone.ID, zone.Name)
+	return &zone, nil
 }
 
 // findItemsInZone - nájde items v zóne
 func (s *Service) findItemsInZone(zoneID uuid.UUID, lat, lon, heading float64, stats *ScannerStats) ([]ScanResult, error) {
 	var results []ScanResult
 
-	// TODO: Implement with GORM when scanner tables are migrated
-	// For now return mock results for testing zone-based scanning
-
-	// Mock artifacts v zóne do 50m
-	artifactPositions := []struct {
-		lat, lon float64
-		name     string
-		rarity   string
-	}{
-		{lat + 0.0001, lon + 0.0001, "Anomalous Crystal", "rare"},  // ~10m
-		{lat + 0.0002, lon - 0.0001, "Quantum Fragment", "epic"},   // ~20m
-		{lat - 0.0003, lon + 0.0002, "Ancient Relic", "legendary"}, // ~35m
-		{lat + 0.0004, lon + 0.0003, "Echo Shard", "common"},       // ~45m
+	// 1. Nájdi artefakty v zóne
+	var artifacts []common.Artifact
+	if err := s.db.Where("zone_id = ? AND is_active = true", zoneID).Find(&artifacts).Error; err != nil {
+		log.Printf("🔍 [SCANNER] Failed to load artifacts for zone %s: %v", zoneID, err)
+		return results, nil
 	}
 
-	for _, pos := range artifactPositions {
-		distance := s.calculateDistance(lat, lon, pos.lat, pos.lon)
+	// 2. Nájdi gear items v zóne
+	var gear []common.Gear
+	if err := s.db.Where("zone_id = ? AND is_active = true", zoneID).Find(&gear).Error; err != nil {
+		log.Printf("🔍 [SCANNER] Failed to load gear for zone %s: %v", zoneID, err)
+		return results, nil
+	}
+
+	log.Printf("🔍 [SCANNER] Zone %s has %d artifacts and %d gear items", zoneID, len(artifacts), len(gear))
+
+	// 3. Spracuj artefakty
+	for _, artifact := range artifacts {
+		distance := s.calculateDistance(lat, lon, artifact.Location.Latitude, artifact.Location.Longitude)
 
 		// Len items do 50m
 		if distance > 50 {
 			continue
 		}
 
-		bearing := s.calculateBearing(lat, lon, pos.lat, pos.lon)
+		bearing := s.calculateBearing(lat, lon, artifact.Location.Latitude, artifact.Location.Longitude)
 
 		// Základný signal strength
 		signalStrength := s.calculateSignalStrength(distance, stats.RangeM, bearing, heading, float64(stats.FovDeg))
@@ -187,48 +202,42 @@ func (s *Service) findItemsInZone(zoneID uuid.UUID, lat, lon, heading float64, s
 		// Pridaj rušenie - čím ďalej, tým väčšie rušenie
 		signalStrength = s.addSignalNoise(signalStrength, distance)
 
-		itemID := uuid.New()
 		results = append(results, ScanResult{
 			Type:           "artifact",
 			DistanceM:      distance,
 			BearingDeg:     bearing,
 			SignalStrength: signalStrength,
-			Name:           pos.name,
-			Rarity:         pos.rarity,
-			ItemID:         &itemID, // Mock ID
+			Name:           artifact.Name,
+			Rarity:         artifact.Rarity,
+			ItemID:         &artifact.ID,
 		})
 	}
 
-	// Mock gear items v zóne
-	gearPositions := []struct {
-		lat, lon float64
-		name     string
-		rarity   string
-	}{
-		{lat + 0.00015, lon - 0.00005, "Quantum Detector", "common"}, // ~15m
-		{lat - 0.00025, lon - 0.00015, "Echo Amplifier", "rare"},     // ~30m
-	}
+	// 4. Spracuj gear items
+	for _, gearItem := range gear {
+		distance := s.calculateDistance(lat, lon, gearItem.Location.Latitude, gearItem.Location.Longitude)
 
-	for _, pos := range gearPositions {
-		distance := s.calculateDistance(lat, lon, pos.lat, pos.lon)
-
+		// Len items do 50m
 		if distance > 50 {
 			continue
 		}
 
-		bearing := s.calculateBearing(lat, lon, pos.lat, pos.lon)
+		bearing := s.calculateBearing(lat, lon, gearItem.Location.Latitude, gearItem.Location.Longitude)
+
+		// Základný signal strength
 		signalStrength := s.calculateSignalStrength(distance, stats.RangeM, bearing, heading, float64(stats.FovDeg))
+
+		// Pridaj rušenie - čím ďalej, tým väčšie rušenie
 		signalStrength = s.addSignalNoise(signalStrength, distance)
 
-		itemID := uuid.New()
 		results = append(results, ScanResult{
 			Type:           "gear",
 			DistanceM:      distance,
 			BearingDeg:     bearing,
 			SignalStrength: signalStrength,
-			Name:           pos.name,
-			Rarity:         pos.rarity,
-			ItemID:         &itemID,
+			Name:           gearItem.Name,
+			Rarity:         "common", // Gear nemá rarity v databáze, použijeme common
+			ItemID:         &gearItem.ID,
 		})
 	}
 
