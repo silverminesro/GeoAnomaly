@@ -13,6 +13,7 @@ import (
 	"geoanomaly/internal/location"
 	"geoanomaly/internal/media"
 	"geoanomaly/internal/menu"
+	"geoanomaly/internal/scanner"
 	"geoanomaly/internal/user"
 	"geoanomaly/pkg/middleware"
 
@@ -47,6 +48,10 @@ func setupRoutes(db *gorm.DB, redisClient *redis.Client, r2Client *media.R2Clien
 	menuHandler := menu.NewHandler(db)
 	loadoutHandler := loadout.NewHandler(db)
 	adminHandler := admin.NewHandler(db, nil)
+
+	// Initialize scanner service and handler
+	scannerService := scanner.NewService(db)
+	scannerHandler := scanner.NewHandler(scannerService)
 
 	// Initialize media service and handler
 	var mediaHandler *media.Handler
@@ -365,6 +370,15 @@ func setupRoutes(db *gorm.DB, redisClient *redis.Client, r2Client *media.R2Clien
 		loadoutRoutes.POST("/:slot_id/repair", loadoutHandler.RepairItem)
 		loadoutRoutes.GET("/stats", loadoutHandler.GetLoadoutStats)
 		loadoutRoutes.GET("/categories", loadoutHandler.GetGearCategories)
+
+		// Scanner routes
+		scannerRoutes := v1.Group("/scanner")
+		scannerRoutes.Use(middleware.JWTAuth())
+		{
+			scannerRoutes.GET("/instance", scannerHandler.GetScannerInstance)
+			scannerRoutes.GET("/stats", scannerHandler.GetScannerStats)
+			scannerRoutes.POST("/scan", scannerHandler.Scan)
+		}
 	}
 
 	// ==========================================
