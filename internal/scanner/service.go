@@ -4,7 +4,10 @@ import (
 	"fmt"
 	"log"
 	"math"
+	"math/rand"
 	"time"
+
+	"geoanomaly/internal/common"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -105,7 +108,7 @@ func (s *Service) Scan(userID uuid.UUID, req *ScanRequest) (*ScanResponse, error
 	}
 
 	// Hľadaj items v dosahu
-	scanResults, err := s.findItemsInRange(req.Latitude, req.Longitude, req.Heading, stats)
+	scanResults, err := s.findItemsInRange(userID, req.Latitude, req.Longitude, req.Heading, stats)
 	if err != nil {
 		return nil, fmt.Errorf("failed to find items: %w", err)
 	}
@@ -123,35 +126,128 @@ func (s *Service) Scan(userID uuid.UUID, req *ScanRequest) (*ScanResponse, error
 }
 
 // findItemsInRange - nájde items v dosahu scanner
-func (s *Service) findItemsInRange(lat, lon, heading float64, stats *ScannerStats) ([]ScanResult, error) {
+func (s *Service) findItemsInRange(userID uuid.UUID, lat, lon, heading float64, stats *ScannerStats) ([]ScanResult, error) {
+	// 1. Skontroluj či je hráč v aktívnej zóne
+	activeZone, err := s.getActiveZoneForPlayer(userID)
+	if err != nil || activeZone == nil {
+		// Hráč nie je v zóne - scanner beží, ale nič nenájde
+		log.Printf("🔍 [SCANNER] User %s scanned outside of active zone - no items found", userID)
+		return []ScanResult{}, nil
+	}
+
+	// 2. Hráč je v zóne - hľadaj items v zóne
+	log.Printf("🔍 [SCANNER] User %s scanning in zone %s", userID, activeZone.ID)
+	return s.findItemsInZone(activeZone.ID, lat, lon, heading, stats)
+}
+
+// getActiveZoneForPlayer - získa aktívnu zónu pre hráča
+func (s *Service) getActiveZoneForPlayer(userID uuid.UUID) (*common.Zone, error) {
 	// TODO: Implement with GORM when scanner tables are migrated
-	// For now return mock results
+	// For now return mock zone for testing
+	return &common.Zone{
+		BaseModel: common.BaseModel{
+			ID: uuid.New(),
+		},
+		Name: "Test Zone",
+	}, nil
+}
+
+// findItemsInZone - nájde items v zóne
+func (s *Service) findItemsInZone(zoneID uuid.UUID, lat, lon, heading float64, stats *ScannerStats) ([]ScanResult, error) {
 	var results []ScanResult
 
-	// Mock some sample results for testing
-	// Artifact result
-	if len(results) < 3 {
+	// TODO: Implement with GORM when scanner tables are migrated
+	// For now return mock results for testing zone-based scanning
+
+	// Mock artifacts v zóne do 50m
+	artifactPositions := []struct {
+		lat, lon float64
+		name     string
+		rarity   string
+	}{
+		{lat + 0.0001, lon + 0.0001, "Anomalous Crystal", "rare"},  // ~10m
+		{lat + 0.0002, lon - 0.0001, "Quantum Fragment", "epic"},   // ~20m
+		{lat - 0.0003, lon + 0.0002, "Ancient Relic", "legendary"}, // ~35m
+		{lat + 0.0004, lon + 0.0003, "Echo Shard", "common"},       // ~45m
+	}
+
+	for _, pos := range artifactPositions {
+		distance := s.calculateDistance(lat, lon, pos.lat, pos.lon)
+
+		// Len items do 50m
+		if distance > 50 {
+			continue
+		}
+
+		bearing := s.calculateBearing(lat, lon, pos.lat, pos.lon)
+
+		// Základný signal strength
+		signalStrength := s.calculateSignalStrength(distance, stats.RangeM, bearing, heading, float64(stats.FovDeg))
+
+		// Pridaj rušenie - čím ďalej, tým väčšie rušenie
+		signalStrength = s.addSignalNoise(signalStrength, distance)
+
+		itemID := uuid.New()
 		results = append(results, ScanResult{
 			Type:           "artifact",
-			DistanceM:      int(float64(stats.RangeM) * 0.3), // 30% of max range
-			BearingDeg:     45.0,
-			SignalStrength: 0.8,
-			Name:           "Anomalous Crystal",
-			Rarity:         "rare",
+			DistanceM:      distance,
+			BearingDeg:     bearing,
+			SignalStrength: signalStrength,
+			Name:           pos.name,
+			Rarity:         pos.rarity,
+			ItemID:         &itemID, // Mock ID
 		})
+	}
 
-		// Gear result
+	// Mock gear items v zóne
+	gearPositions := []struct {
+		lat, lon float64
+		name     string
+		rarity   string
+	}{
+		{lat + 0.00015, lon - 0.00005, "Quantum Detector", "common"}, // ~15m
+		{lat - 0.00025, lon - 0.00015, "Echo Amplifier", "rare"},     // ~30m
+	}
+
+	for _, pos := range gearPositions {
+		distance := s.calculateDistance(lat, lon, pos.lat, pos.lon)
+
+		if distance > 50 {
+			continue
+		}
+
+		bearing := s.calculateBearing(lat, lon, pos.lat, pos.lon)
+		signalStrength := s.calculateSignalStrength(distance, stats.RangeM, bearing, heading, float64(stats.FovDeg))
+		signalStrength = s.addSignalNoise(signalStrength, distance)
+
+		itemID := uuid.New()
 		results = append(results, ScanResult{
 			Type:           "gear",
-			DistanceM:      int(float64(stats.RangeM) * 0.7), // 70% of max range
-			BearingDeg:     135.0,
-			SignalStrength: 0.4,
-			Name:           "Quantum Detector",
-			Rarity:         "common",
+			DistanceM:      distance,
+			BearingDeg:     bearing,
+			SignalStrength: signalStrength,
+			Name:           pos.name,
+			Rarity:         pos.rarity,
+			ItemID:         &itemID,
 		})
 	}
 
 	return results, nil
+}
+
+// addSignalNoise - pridá rušenie do signal strength
+func (s *Service) addSignalNoise(signalStrength float64, distanceM int) float64 {
+	// Čím ďalej, tým väčšie rušenie (0% na 0m, 100% na 50m)
+	noiseFactor := float64(distanceM) / 50.0
+
+	// Náhodné rušenie ±20%
+	noise := (rand.Float64() - 0.5) * 0.4 * noiseFactor
+
+	// Aplikuj rušenie
+	result := signalStrength + noise
+
+	// Obmedz na 0-1
+	return math.Max(0.0, math.Min(1.0, result))
 }
 
 // Helper functions remain the same
