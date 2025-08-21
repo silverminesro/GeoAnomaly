@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/your_repo/internal/common"
 )
 
 // StringArray - custom typ pre JSONB string arrays
@@ -245,4 +246,42 @@ type ScanResult struct {
 	ItemID         *uuid.UUID `json:"item_id,omitempty"`
 	Name           string     `json:"name,omitempty"`
 	Rarity         string     `json:"rarity,omitempty"`
+}
+
+// SecureZoneData represents encrypted zone data for client-side processing
+type SecureZoneData struct {
+	EncryptedArtifacts string    `json:"encrypted_artifacts"`
+	ZoneHash           string    `json:"zone_hash"`
+	SessionToken       string    `json:"session_token"`
+	ExpiresAt          time.Time `json:"expires_at"`
+	MaxScans           int       `json:"max_scans"`
+	ScanCount          int       `json:"scan_count"`
+}
+
+// ScanSession represents a scanning session for a user in a zone
+type ScanSession struct {
+	UserID    string    `json:"user_id"`
+	ZoneID    string    `json:"zone_id"`
+	ScanCount int       `json:"scan_count"`
+	MaxScans  int       `json:"max_scans"`
+	CreatedAt time.Time `json:"created_at"`
+	ExpiresAt time.Time `json:"expires_at"`
+}
+
+// ZoneArtifacts represents all items in a zone for encryption
+type ZoneArtifacts struct {
+	Artifacts []common.Artifact `json:"artifacts"`
+	Gear      []common.Gear     `json:"gear"`
+	ZoneID    string            `json:"zone_id"`
+	Timestamp time.Time         `json:"timestamp"`
+}
+
+// ClaimRequest represents a claim request with position verification
+type ClaimRequest struct {
+	ItemID       string  `json:"item_id" binding:"required"`
+	ItemType     string  `json:"item_type" binding:"required"` // "artifact" or "gear"
+	Latitude     float64 `json:"latitude" binding:"required"`
+	Longitude    float64 `json:"longitude" binding:"required"`
+	ZoneID       string  `json:"zone_id" binding:"required"`
+	SessionToken string  `json:"session_token" binding:"required"`
 }

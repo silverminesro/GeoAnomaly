@@ -1,6 +1,7 @@
 package scanner
 
 import (
+	"log"
 	"math"
 	"net/http"
 	"strings"
@@ -134,4 +135,54 @@ func (h *Handler) GetModuleCatalog(c *gin.Context) {
 		"success": true,
 		"message": "Module catalog endpoint - to be implemented",
 	})
+}
+
+// GetSecureZoneData returns encrypted zone data for client-side processing
+func (h *Handler) GetSecureZoneData(c *gin.Context) {
+	userID := c.GetString("user_id")
+	zoneID := c.Param("zone_id")
+
+	if zoneID == "" {
+		c.JSON(400, gin.H{"error": "zone_id is required"})
+		return
+	}
+
+	secureData, err := h.service.GetSecureZoneData(zoneID, userID)
+	if err != nil {
+		log.Printf("Failed to get secure zone data: %v", err)
+		c.JSON(500, gin.H{"error": "Failed to get zone data"})
+		return
+	}
+
+	c.JSON(200, gin.H{
+		"success": true,
+		"data":    secureData,
+	})
+}
+
+// ValidateClaim validates a claim request and processes the claim
+func (h *Handler) ValidateClaim(c *gin.Context) {
+	userID := c.GetString("user_id")
+
+	var req ClaimRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(400, gin.H{"error": "Invalid request format"})
+		return
+	}
+
+	success, err := h.service.ValidateClaimRequest(req, userID)
+	if err != nil {
+		log.Printf("Claim validation failed: %v", err)
+		c.JSON(400, gin.H{"error": err.Error()})
+		return
+	}
+
+	if success {
+		c.JSON(200, gin.H{
+			"success": true,
+			"message": "Item claimed successfully",
+		})
+	} else {
+		c.JSON(400, gin.H{"error": "Failed to claim item"})
+	}
 }

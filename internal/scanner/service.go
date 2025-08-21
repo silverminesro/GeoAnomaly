@@ -1,7 +1,14 @@
 package scanner
 
 import (
+	"crypto/aes"
+	"crypto/cipher"
+	cryptorand "crypto/rand"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"math"
 	"math/rand"
@@ -439,4 +446,221 @@ func (s *Service) calculateSignalStrength(distanceM, maxRangeM int, bearingDeg, 
 
 	// Aplikuj nelineárnu krivku
 	return math.Pow(signalStrength, 0.8)
+}
+
+// GetSecureZoneData returns encrypted zone data for client-side processing
+func (s *Service) GetSecureZoneData(zoneID string, userID string) (*SecureZoneData, error) {
+	// Get all artifacts and gear in the zone
+	artifacts, err := s.getAllArtifactsInZone(zoneID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get artifacts: %w", err)
+	}
+
+	gear, err := s.getAllGearInZone(zoneID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get gear: %w", err)
+	}
+
+	// Create zone artifacts data
+	zoneData := ZoneArtifacts{
+		Artifacts: artifacts,
+		Gear:      gear,
+		ZoneID:    zoneID,
+		Timestamp: time.Now(),
+	}
+
+	// Encrypt the data
+	encryptedData, err := s.encryptZoneData(zoneData, userID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to encrypt zone data: %w", err)
+	}
+
+	// Create session token
+	sessionToken := s.createSessionToken(userID, zoneID)
+
+	// Create scan session
+	session := ScanSession{
+		UserID:    userID,
+		ZoneID:    zoneID,
+		ScanCount: 0,
+		MaxScans:  50, // 50 scans per session
+		CreatedAt: time.Now(),
+		ExpiresAt: time.Now().Add(10 * time.Minute), // 10 minute session
+	}
+
+	// Store session in Redis (TODO: implement Redis client)
+	// sessionKey := fmt.Sprintf("scan_session:%s", sessionToken)
+	// sessionJSON, _ := json.Marshal(session)
+	// s.redis.Set(sessionKey, sessionJSON, 10*time.Minute)
+
+	// Generate zone hash for verification
+	zoneHash := s.generateZoneHash(zoneID, userID)
+
+	return &SecureZoneData{
+		EncryptedArtifacts: encryptedData,
+		ZoneHash:           zoneHash,
+		SessionToken:       sessionToken,
+		ExpiresAt:          session.ExpiresAt,
+		MaxScans:           session.MaxScans,
+		ScanCount:          0,
+	}, nil
+}
+
+// encryptZoneData encrypts zone artifacts data with user-specific key
+func (s *Service) encryptZoneData(data ZoneArtifacts, userID string) (string, error) {
+	// Convert data to JSON
+	jsonData, err := json.Marshal(data)
+	if err != nil {
+		return "", err
+	}
+
+	// Create user-specific encryption key
+	key := s.generateUserKey(userID)
+
+	// Create cipher
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return "", err
+	}
+
+	// Create GCM mode
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return "", err
+	}
+
+	// Create nonce
+	nonce := make([]byte, gcm.NonceSize())
+	if _, err := io.ReadFull(cryptorand.Reader, nonce); err != nil {
+		return "", err
+	}
+
+	// Encrypt data
+	ciphertext := gcm.Seal(nonce, nonce, jsonData, nil)
+
+	// Return base64 encoded
+	return base64.StdEncoding.EncodeToString(ciphertext), nil
+}
+
+// generateUserKey creates a deterministic key for user
+func (s *Service) generateUserKey(userID string) []byte {
+	// Use a combination of user ID and server secret
+	secret := "GeoAnomalySecret2024" // In production, use environment variable
+	data := userID + secret
+	hash := sha256.Sum256([]byte(data))
+	return hash[:32] // Use first 32 bytes for AES-256
+}
+
+// createSessionToken creates a unique session token
+func (s *Service) createSessionToken(userID, zoneID string) string {
+	data := fmt.Sprintf("%s:%s:%d", userID, zoneID, time.Now().UnixNano())
+	hash := sha256.Sum256([]byte(data))
+	return base64.StdEncoding.EncodeToString(hash[:16])
+}
+
+// generateZoneHash creates a hash for zone verification
+func (s *Service) generateZoneHash(zoneID, userID string) string {
+	data := fmt.Sprintf("%s:%s:%s", zoneID, userID, "GeoAnomalyZoneHash")
+	hash := sha256.Sum256([]byte(data))
+	return base64.StdEncoding.EncodeToString(hash[:16])
+}
+
+// getAllArtifactsInZone retrieves all artifacts in a zone
+func (s *Service) getAllArtifactsInZone(zoneID string) ([]common.Artifact, error) {
+	var artifacts []common.Artifact
+	zoneUUID, err := uuid.Parse(zoneID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid zone ID: %w", err)
+	}
+	err = s.db.Where("zone_id = ? AND is_active = true", zoneUUID).Find(&artifacts).Error
+	return artifacts, err
+}
+
+// getAllGearInZone retrieves all gear items in a zone
+func (s *Service) getAllGearInZone(zoneID string) ([]common.Gear, error) {
+	var gear []common.Gear
+	zoneUUID, err := uuid.Parse(zoneID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid zone ID: %w", err)
+	}
+	err = s.db.Where("zone_id = ? AND is_active = true", zoneUUID).Find(&gear).Error
+	return gear, err
+}
+
+// ValidateClaimRequest validates a claim request and returns success
+func (s *Service) ValidateClaimRequest(req ClaimRequest, userID string) (bool, error) {
+	// TODO: Implement Redis session validation
+	// For now, just validate the item exists and player is close enough
+
+	// Get item position based on type
+	var itemLat, itemLon float64
+	var itemID string
+
+	if req.ItemType == "artifact" {
+		var artifact common.Artifact
+		err := s.db.Where("id = ? AND zone_id = ? AND is_claimed = false", req.ItemID, req.ZoneID).First(&artifact).Error
+		if err != nil {
+			return false, fmt.Errorf("artifact not found or already claimed")
+		}
+		itemLat = artifact.Location.Latitude
+		itemLon = artifact.Location.Longitude
+		itemID = artifact.ID.String()
+	} else if req.ItemType == "gear" {
+		var gear common.Gear
+		err := s.db.Where("id = ? AND zone_id = ? AND is_claimed = false", req.ItemID, req.ZoneID).First(&gear).Error
+		if err != nil {
+			return false, fmt.Errorf("gear not found or already claimed")
+		}
+		itemLat = gear.Location.Latitude
+		itemLon = gear.Location.Longitude
+		itemID = gear.ID.String()
+	} else {
+		return false, fmt.Errorf("invalid item type")
+	}
+
+	// Calculate distance between player and item
+	distance := s.calculateDistance(req.Latitude, req.Longitude, itemLat, itemLon)
+
+	// Allow claiming if within 10 meters
+	if distance > 10 {
+		return false, fmt.Errorf("too far from item (distance: %dm)", distance)
+	}
+
+	// Mark item as claimed
+	if req.ItemType == "artifact" {
+		err := s.db.Model(&common.Artifact{}).Where("id = ?", req.ItemID).Update("is_claimed", true).Error
+		if err != nil {
+			return false, fmt.Errorf("failed to mark artifact as claimed")
+		}
+	} else {
+		err := s.db.Model(&common.Gear{}).Where("id = ?", req.ItemID).Update("is_claimed", true).Error
+		if err != nil {
+			return false, fmt.Errorf("failed to mark gear as claimed")
+		}
+	}
+
+	// Add item to user's inventory
+	userUUID, err := uuid.Parse(userID)
+	if err != nil {
+		return false, fmt.Errorf("invalid user ID")
+	}
+
+	itemUUID, err2 := uuid.Parse(itemID)
+	if err2 != nil {
+		return false, fmt.Errorf("invalid item ID")
+	}
+
+	inventoryItem := common.InventoryItem{
+		UserID:   userUUID,
+		ItemType: req.ItemType,
+		ItemID:   itemUUID,
+		Quantity: 1,
+	}
+
+	err3 := s.db.Create(&inventoryItem).Error
+	if err3 != nil {
+		return false, fmt.Errorf("failed to add item to inventory")
+	}
+
+	return true, nil
 }
