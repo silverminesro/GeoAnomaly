@@ -660,8 +660,8 @@ func (s *Service) ValidateClaimRequest(req ClaimRequest, userID string) (bool, e
 	// Calculate distance between player and item
 	distance := s.calculateDistance(req.Latitude, req.Longitude, itemLat, itemLon)
 
-	// Allow claiming if within 10 meters
-	if distance > 10 {
+	// Allow claiming if within 25 meters
+	if distance > 25 {
 		return false, fmt.Errorf("too far from item (distance: %dm)", distance)
 	}
 
