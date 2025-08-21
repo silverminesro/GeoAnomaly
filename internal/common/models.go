@@ -179,6 +179,7 @@ type Artifact struct {
 
 	Properties JSONB `json:"properties,omitempty" gorm:"type:jsonb;default:'{}'::jsonb"`
 	IsActive   bool  `json:"is_active" gorm:"default:true"`
+	IsClaimed  bool  `json:"is_claimed" gorm:"default:false"`
 
 	// Relationships
 	Zone *Zone `json:"zone,omitempty" gorm:"foreignKey:ZoneID"`
@@ -199,6 +200,7 @@ type Gear struct {
 
 	Properties JSONB `json:"properties,omitempty" gorm:"type:jsonb;default:'{}'::jsonb"`
 	IsActive   bool  `json:"is_active" gorm:"default:true"`
+	IsClaimed  bool  `json:"is_claimed" gorm:"default:false"`
 
 	// Relationships
 	Zone *Zone `json:"zone,omitempty" gorm:"foreignKey:ZoneID"`
