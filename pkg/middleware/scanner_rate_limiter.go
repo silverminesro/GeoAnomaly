@@ -39,7 +39,7 @@ func (srl *ScannerRateLimiter) ScannerRateLimit() gin.HandlerFunc {
 		}
 
 		// Získaj scanner inštanciu
-		scannerService := scanner.NewService(srl.db)
+		scannerService := scanner.NewService(srl.db, srl.client)
 		instance, err := scannerService.GetOrCreateScannerInstance(userID.(uuid.UUID))
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get scanner instance"})
@@ -57,7 +57,7 @@ func (srl *ScannerRateLimiter) ScannerRateLimit() gin.HandlerFunc {
 
 		// Vypočítať rate limit založený na scanner polling rate
 		maxRequestsPerMinute := int(stats.ServerPollHz * 60) // Konvertuj Hz na requests za minútu
-		
+
 		// Minimum 60 requests za minútu, maximum 300
 		if maxRequestsPerMinute < 60 {
 			maxRequestsPerMinute = 60
@@ -80,10 +80,10 @@ func (srl *ScannerRateLimiter) ScannerRateLimit() gin.HandlerFunc {
 			c.JSON(http.StatusTooManyRequests, gin.H{
 				"error": "Scanner rate limit exceeded",
 				"details": gin.H{
-					"scanner_poll_hz":     stats.ServerPollHz,
+					"scanner_poll_hz":      stats.ServerPollHz,
 					"max_requests_per_min": maxRequestsPerMinute,
-					"wait_time_seconds":   int(waitTime.Seconds()),
-					"next_request_at":     nextRequestTime.Unix(),
+					"wait_time_seconds":    int(waitTime.Seconds()),
+					"next_request_at":      nextRequestTime.Unix(),
 				},
 				"message": fmt.Sprintf("Scanner polling too fast. Wait %d seconds.", int(waitTime.Seconds())),
 			})
@@ -108,7 +108,7 @@ func (srl *ScannerRateLimiter) checkScannerRateLimit(userID string, maxRequests 
 	}
 
 	key := fmt.Sprintf("scanner_rate:%s", userID)
-	
+
 	// Získaj aktuálny počet requestov
 	val, err := srl.client.Get(context.Background(), key).Result()
 	if err != nil && err != redis.Nil {
