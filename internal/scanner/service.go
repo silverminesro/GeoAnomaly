@@ -24,7 +24,7 @@ func NewService(db *gorm.DB) *Service {
 // GetBasicScanner - vráti základný scanner pre hráča
 func (s *Service) GetBasicScanner() (*ScannerCatalog, error) {
 	var scanner ScannerCatalog
-	
+
 	// Načítaj scanner z databázy
 	if err := s.db.Where("code = ? AND is_basic = true", "echovane_mk0").First(&scanner).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
@@ -41,22 +41,22 @@ func (s *Service) GetBasicScanner() (*ScannerCatalog, error) {
 					FovPctMax:       50,
 					ServerPollHzMax: 2.0,
 				},
-				DrainMult:      1.0,
-				AllowedModules: StringArray{"mod_range_i", "mod_fov_i", "mod_response_i"},
-				SlotCount:      3,
-				SlotTypes:      StringArray{"power", "range", "fov"},
-				IsBasic:        true,
-				MaxRarity:      "rare",        // Základný scanner môže detekovať len common a rare
-				DetectArtifacts: true,         // Môže detekovať artefakty
-				DetectGear:     true,          // Môže detekovať gear
-				Version:        1,
-				CreatedAt:      time.Now(),
-				UpdatedAt:      time.Now(),
+				DrainMult:       1.0,
+				AllowedModules:  StringArray{"mod_range_i", "mod_fov_i", "mod_response_i"},
+				SlotCount:       3,
+				SlotTypes:       StringArray{"power", "range", "fov"},
+				IsBasic:         true,
+				MaxRarity:       "rare", // Základný scanner môže detekovať len common a rare
+				DetectArtifacts: true,   // Môže detekovať artefakty
+				DetectGear:      true,   // Môže detekovať gear
+				Version:         1,
+				CreatedAt:       time.Now(),
+				UpdatedAt:       time.Now(),
 			}, nil
 		}
 		return nil, fmt.Errorf("failed to load scanner from database: %w", err)
 	}
-	
+
 	return &scanner, nil
 }
 
@@ -96,8 +96,7 @@ func (s *Service) CalculateScannerStats(instance *ScannerInstance) (*ScannerStat
 		return nil, fmt.Errorf("scanner catalog not loaded")
 	}
 
-	// TODO: Implement module calculation with GORM when scanner tables are migrated
-	// For now return basic stats
+	// Základné stats
 	stats := &ScannerStats{
 		RangeM:          instance.Scanner.BaseRangeM,
 		FovDeg:          instance.Scanner.BaseFovDeg,
@@ -105,6 +104,9 @@ func (s *Service) CalculateScannerStats(instance *ScannerInstance) (*ScannerStat
 		LockOnThreshold: 0.85, // základná hodnota
 		EnergyCap:       100,  // basic energy cap
 	}
+
+	// TODO: Implement module calculation with GORM when scanner tables are migrated
+	// For now return basic stats
 
 	return stats, nil
 }
@@ -153,14 +155,14 @@ func (s *Service) findItemsInRange(userID uuid.UUID, lat, lon, heading float64, 
 
 	// 2. Hráč je v zóne - hľadaj items v zóne
 	log.Printf("🔍 [SCANNER] User %s scanning in zone %s", userID, activeZone.ID)
-	
+
 	// Získaj scanner inštanciu pre detaily
 	scannerInstance, err := s.GetOrCreateScannerInstance(userID)
 	if err != nil {
 		log.Printf("🔍 [SCANNER] Failed to get scanner instance: %v", err)
 		return s.findItemsInZone(activeZone.ID, lat, lon, heading, stats, nil)
 	}
-	
+
 	return s.findItemsInZone(activeZone.ID, lat, lon, heading, stats, scannerInstance)
 }
 
@@ -204,7 +206,7 @@ func (s *Service) findItemsInZone(zoneID uuid.UUID, lat, lon, heading float64, s
 		detectGear = scannerInstance.Scanner.DetectGear
 	}
 
-	log.Printf("🔍 [SCANNER] Scanner capabilities - MaxRarity: %s, DetectArtifacts: %v, DetectGear: %v", 
+	log.Printf("🔍 [SCANNER] Scanner capabilities - MaxRarity: %s, DetectArtifacts: %v, DetectGear: %v",
 		scannerMaxRarity, detectArtifacts, detectGear)
 
 	// 1. Nájdi artefakty v zóne (ak scanner môže detekovať artefakty)
@@ -219,7 +221,7 @@ func (s *Service) findItemsInZone(zoneID uuid.UUID, lat, lon, heading float64, s
 			for _, artifact := range artifacts {
 				// Skontroluj či scanner môže detekovať túto rarity
 				if !s.canDetectRarity(scannerMaxRarity, artifact.Rarity) {
-					log.Printf("🔍 [SCANNER] Skipping %s artifact (rarity: %s, scanner max: %s)", 
+					log.Printf("🔍 [SCANNER] Skipping %s artifact (rarity: %s, scanner max: %s)",
 						artifact.Name, artifact.Rarity, scannerMaxRarity)
 					continue
 				}
@@ -249,7 +251,7 @@ func (s *Service) findItemsInZone(zoneID uuid.UUID, lat, lon, heading float64, s
 					ItemID:         &artifact.ID,
 				})
 
-				log.Printf("🔍 [SCANNER] Detected artifact: %s (rarity: %s, distance: %.1fm)", 
+				log.Printf("🔍 [SCANNER] Detected artifact: %s (rarity: %s, distance: %.1fm)",
 					artifact.Name, artifact.Rarity, distance)
 			}
 		}
