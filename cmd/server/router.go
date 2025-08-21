@@ -50,7 +50,7 @@ func setupRoutes(db *gorm.DB, redisClient *redis.Client, r2Client *media.R2Clien
 	adminHandler := admin.NewHandler(db, nil)
 
 	// Initialize scanner service and handler
-	scannerService := scanner.NewService(db)
+	scannerService := scanner.NewService(db, redisClient)
 	scannerHandler := scanner.NewHandler(scannerService)
 
 	// Initialize scanner rate limiter
