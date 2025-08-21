@@ -52,7 +52,7 @@ func setupRoutes(db *gorm.DB, redisClient *redis.Client, r2Client *media.R2Clien
 	// Initialize scanner service and handler
 	scannerService := scanner.NewService(db)
 	scannerHandler := scanner.NewHandler(scannerService)
-	
+
 	// Initialize scanner rate limiter
 	var scannerRateLimiter *middleware.ScannerRateLimiter
 	if redisClient != nil {
@@ -387,6 +387,8 @@ func setupRoutes(db *gorm.DB, redisClient *redis.Client, r2Client *media.R2Clien
 			scannerRoutes.GET("/instance", scannerHandler.GetScannerInstance)
 			scannerRoutes.GET("/stats", scannerHandler.GetScannerStats)
 			scannerRoutes.POST("/scan", scannerHandler.Scan)
+			scannerRoutes.GET("/zone/:zone_id/secure-data", scannerHandler.GetSecureZoneData)
+			scannerRoutes.POST("/claim", scannerHandler.ValidateClaim)
 		}
 	}
 
