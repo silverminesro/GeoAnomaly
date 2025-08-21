@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/your_repo/internal/common"
+	"geoanomaly/internal/common"
 )
 
 // StringArray - custom typ pre JSONB string arrays

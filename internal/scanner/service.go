@@ -1,6 +1,7 @@
 package scanner
 
 import (
+	"context"
 	"crypto/aes"
 	"crypto/cipher"
 	cryptorand "crypto/rand"
@@ -17,15 +18,17 @@ import (
 	"geoanomaly/internal/common"
 
 	"github.com/google/uuid"
+	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
 )
 
 type Service struct {
-	db *gorm.DB
+	db    *gorm.DB
+	redis *redis.Client
 }
 
-func NewService(db *gorm.DB) *Service {
-	return &Service{db: db}
+func NewService(db *gorm.DB, redisClient *redis.Client) *Service {
+	return &Service{db: db, redis: redisClient}
 }
 
 // GetBasicScanner - vráti základný scanner pre hráča
@@ -488,10 +491,15 @@ func (s *Service) GetSecureZoneData(zoneID string, userID string) (*SecureZoneDa
 		ExpiresAt: time.Now().Add(10 * time.Minute), // 10 minute session
 	}
 
-	// Store session in Redis (TODO: implement Redis client)
-	// sessionKey := fmt.Sprintf("scan_session:%s", sessionToken)
-	// sessionJSON, _ := json.Marshal(session)
-	// s.redis.Set(sessionKey, sessionJSON, 10*time.Minute)
+	// Store session in Redis
+	if s.redis != nil {
+		sessionKey := fmt.Sprintf("scan_session:%s", sessionToken)
+		sessionJSON, _ := json.Marshal(session)
+		err = s.redis.Set(context.Background(), sessionKey, sessionJSON, 10*time.Minute).Err()
+		if err != nil {
+			log.Printf("Warning: Failed to store session in Redis: %v", err)
+		}
+	}
 
 	// Generate zone hash for verification
 	zoneHash := s.generateZoneHash(zoneID, userID)
@@ -589,8 +597,39 @@ func (s *Service) getAllGearInZone(zoneID string) ([]common.Gear, error) {
 
 // ValidateClaimRequest validates a claim request and returns success
 func (s *Service) ValidateClaimRequest(req ClaimRequest, userID string) (bool, error) {
-	// TODO: Implement Redis session validation
-	// For now, just validate the item exists and player is close enough
+	// Validate session if Redis is available
+	if s.redis != nil {
+		sessionKey := fmt.Sprintf("scan_session:%s", req.SessionToken)
+		sessionData, err := s.redis.Get(context.Background(), sessionKey).Result()
+		if err != nil {
+			return false, fmt.Errorf("invalid session token")
+		}
+
+		var session ScanSession
+		if err := json.Unmarshal([]byte(sessionData), &session); err != nil {
+			return false, fmt.Errorf("invalid session data")
+		}
+
+		// Check if session belongs to user
+		if session.UserID != userID {
+			return false, fmt.Errorf("session does not belong to user")
+		}
+
+		// Check if session is expired
+		if time.Now().After(session.ExpiresAt) {
+			return false, fmt.Errorf("session expired")
+		}
+
+		// Increment scan count
+		session.ScanCount++
+		if session.ScanCount > session.MaxScans {
+			return false, fmt.Errorf("max scans exceeded for session")
+		}
+
+		// Update session in Redis
+		sessionJSON, _ := json.Marshal(session)
+		s.redis.Set(context.Background(), sessionKey, sessionJSON, 10*time.Minute)
+	}
 
 	// Get item position based on type
 	var itemLat, itemLon float64
