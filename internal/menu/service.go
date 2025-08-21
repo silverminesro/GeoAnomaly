@@ -282,9 +282,15 @@ func (s *Service) PurchaseMarketItem(userID uuid.UUID, itemID uuid.UUID, quantit
 			}
 		}
 
+		// Scannery v inventári evidujeme ako 'gear' (kvôli existujúcemu DB constraintu)
+		inventoryItemType := item.Type
+		if item.Type == "scanner" || item.Category == "scanner" || item.Category == "scanners" {
+			inventoryItemType = "gear"
+		}
+
 		inventoryItem := common.InventoryItem{
 			UserID:     userID,
-			ItemType:   item.Type,
+			ItemType:   inventoryItemType,
 			ItemID:     item.ID,
 			Quantity:   quantity,
 			Properties: baseProperties,
