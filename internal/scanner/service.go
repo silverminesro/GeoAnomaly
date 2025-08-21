@@ -105,10 +105,53 @@ func (s *Service) CalculateScannerStats(instance *ScannerInstance) (*ScannerStat
 		EnergyCap:       100,  // basic energy cap
 	}
 
+	// Puls Scanner specific stats
+	if s.isPulsScanner(instance.Scanner.Code) {
+		stats = s.calculatePulsScannerStats(instance, stats)
+	}
+
 	// TODO: Implement module calculation with GORM when scanner tables are migrated
 	// For now return basic stats
 
 	return stats, nil
+}
+
+// isPulsScanner - kontroluje či je scanner puls typ
+func (s *Service) isPulsScanner(scannerCode string) bool {
+	return scannerCode == "puls_mk0" || scannerCode == "puls_mk1" || scannerCode == "puls_mk2"
+}
+
+// calculatePulsScannerStats - vypočíta stats pre puls scanner
+func (s *Service) calculatePulsScannerStats(instance *ScannerInstance, baseStats *ScannerStats) *ScannerStats {
+	stats := *baseStats // Copy base stats
+
+	// Pridaj puls-specific capabilities
+	if instance.Scanner.CapsJSON.WaveDurationMs != nil {
+		stats.WaveDurationMs = instance.Scanner.CapsJSON.WaveDurationMs
+	}
+	if instance.Scanner.CapsJSON.EchoDelayMs != nil {
+		stats.EchoDelayMs = instance.Scanner.CapsJSON.EchoDelayMs
+	}
+	if instance.Scanner.CapsJSON.MaxWaves != nil {
+		stats.MaxWaves = instance.Scanner.CapsJSON.MaxWaves
+	}
+	if instance.Scanner.CapsJSON.WaveSpeedMs != nil {
+		stats.WaveSpeedMs = instance.Scanner.CapsJSON.WaveSpeedMs
+	}
+	if instance.Scanner.CapsJSON.NoiseLevel != nil {
+		stats.NoiseLevel = instance.Scanner.CapsJSON.NoiseLevel
+	}
+	if instance.Scanner.CapsJSON.RealTimeCapable != nil {
+		stats.RealTimeCapable = instance.Scanner.CapsJSON.RealTimeCapable
+	}
+	if instance.Scanner.CapsJSON.AdvancedEcho != nil {
+		stats.AdvancedEcho = instance.Scanner.CapsJSON.AdvancedEcho
+	}
+	if instance.Scanner.CapsJSON.NoiseFilter != nil {
+		stats.NoiseFilter = instance.Scanner.CapsJSON.NoiseFilter
+	}
+
+	return &stats
 }
 
 // Scan - vykoná skenovanie
@@ -251,7 +294,7 @@ func (s *Service) findItemsInZone(zoneID uuid.UUID, lat, lon, heading float64, s
 					ItemID:         &artifact.ID,
 				})
 
-				log.Printf("🔍 [SCANNER] Detected artifact: %s (rarity: %s, distance: %.1fm)",
+				log.Printf("🔍 [SCANNER] Detected artifact: %s (rarity: %s, distance: %dm)",
 					artifact.Name, artifact.Rarity, distance)
 			}
 		}
@@ -292,7 +335,7 @@ func (s *Service) findItemsInZone(zoneID uuid.UUID, lat, lon, heading float64, s
 					ItemID:         &gearItem.ID,
 				})
 
-				log.Printf("🔍 [SCANNER] Detected gear: %s (distance: %.1fm)", gearItem.Name, distance)
+				log.Printf("🔍 [SCANNER] Detected gear: %s (distance: %dm)", gearItem.Name, distance)
 			}
 		}
 	}

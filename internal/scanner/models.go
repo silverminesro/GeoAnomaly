@@ -59,6 +59,16 @@ type ScannerCaps struct {
 	RangePctMax     int     `json:"range_pct_max"`
 	FovPctMax       int     `json:"fov_pct_max"`
 	ServerPollHzMax float64 `json:"server_poll_hz_max"`
+
+	// Puls Scanner specific capabilities
+	WaveDurationMs  *int     `json:"wave_duration_ms,omitempty"`  // Duration of wave animation in milliseconds
+	EchoDelayMs     *int     `json:"echo_delay_ms,omitempty"`     // Delay before echo signals appear
+	MaxWaves        *int     `json:"max_waves,omitempty"`         // Maximum number of concurrent waves
+	WaveSpeedMs     *int     `json:"wave_speed_ms,omitempty"`     // Wave propagation speed in m/s
+	NoiseLevel      *float64 `json:"noise_level,omitempty"`       // Noise level (0.0 - 1.0)
+	RealTimeCapable *bool    `json:"real_time_capable,omitempty"` // Can operate in real-time mode
+	AdvancedEcho    *bool    `json:"advanced_echo,omitempty"`     // Has advanced echo processing
+	NoiseFilter     *bool    `json:"noise_filter,omitempty"`      // Has built-in noise filtering
 }
 
 // Value a Scan pre JSONB
@@ -105,6 +115,16 @@ type ModuleEffects struct {
 	OffSectorHint        *bool    `json:"off_sector_hint,omitempty"`
 	HapticsBoost         *bool    `json:"haptics_boost,omitempty"`
 	TurnHintDistanceM    *int     `json:"turn_hint_distance_m,omitempty"`
+
+	// Puls Scanner specific effects
+	NoiseReduction   *float64 `json:"noise_reduction,omitempty"`   // Reduces noise level
+	EchoClarity      *float64 `json:"echo_clarity,omitempty"`      // Improves echo signal clarity
+	EchoStrength     *float64 `json:"echo_strength,omitempty"`     // Increases echo signal strength
+	RangeBoost       *float64 `json:"range_boost,omitempty"`       // Additional range boost
+	SignalClarity    *float64 `json:"signal_clarity,omitempty"`    // Improves overall signal clarity
+	WavePower        *float64 `json:"wave_power,omitempty"`        // Increases wave power
+	Penetration      *float64 `json:"penetration,omitempty"`       // Improves wave penetration
+	EnergyEfficiency *float64 `json:"energy_efficiency,omitempty"` // Improves energy efficiency
 }
 
 // Value a Scan pre JSONB
@@ -189,6 +209,16 @@ type ScannerStats struct {
 	LockOnThreshold  float64 `json:"lock_on_threshold"`
 	EnergyCap        int     `json:"energy_cap"`
 	PowerCellMinutes *int    `json:"power_cell_minutes,omitempty"`
+
+	// Puls Scanner specific stats
+	WaveDurationMs  *int     `json:"wave_duration_ms,omitempty"`  // Duration of wave animation in milliseconds
+	EchoDelayMs     *int     `json:"echo_delay_ms,omitempty"`     // Delay before echo signals appear
+	MaxWaves        *int     `json:"max_waves,omitempty"`         // Maximum number of concurrent waves
+	WaveSpeedMs     *int     `json:"wave_speed_ms,omitempty"`     // Wave propagation speed in m/s
+	NoiseLevel      *float64 `json:"noise_level,omitempty"`       // Noise level (0.0 - 1.0)
+	RealTimeCapable *bool    `json:"real_time_capable,omitempty"` // Can operate in real-time mode
+	AdvancedEcho    *bool    `json:"advanced_echo,omitempty"`     // Has advanced echo processing
+	NoiseFilter     *bool    `json:"noise_filter,omitempty"`      // Has built-in noise filtering
 }
 
 // ScanRequest - request na skenovanie
