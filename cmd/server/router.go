@@ -380,13 +380,15 @@ func setupRoutes(db *gorm.DB, redisClient *redis.Client, r2Client *media.R2Clien
 		// Scanner routes
 		scannerRoutes := v1.Group("/scanner")
 		scannerRoutes.Use(middleware.JWTAuth())
-		if scannerRateLimiter != nil {
-			scannerRoutes.Use(scannerRateLimiter.ScannerRateLimit())
-		}
 		{
 			scannerRoutes.GET("/instance", scannerHandler.GetScannerInstance)
 			scannerRoutes.GET("/stats", scannerHandler.GetScannerStats)
-			scannerRoutes.POST("/scan", scannerHandler.Scan)
+			// apply rate-limiter ONLY to /scan
+			if scannerRateLimiter != nil {
+				scannerRoutes.POST("/scan", scannerRateLimiter.ScannerRateLimit(), scannerHandler.Scan)
+			} else {
+				scannerRoutes.POST("/scan", scannerHandler.Scan)
+			}
 			scannerRoutes.GET("/zone/:zone_id/secure-data", scannerHandler.GetSecureZoneData)
 			scannerRoutes.POST("/claim", scannerHandler.ValidateClaim)
 		}
