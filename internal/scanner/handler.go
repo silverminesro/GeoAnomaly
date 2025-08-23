@@ -162,7 +162,17 @@ func (h *Handler) GetSecureZoneData(c *gin.Context) {
 
 // ValidateClaim validates a claim request and processes the claim
 func (h *Handler) ValidateClaim(c *gin.Context) {
-	userID := c.GetString("user_id")
+	userIDRaw, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+		return
+	}
+
+	userUUID, ok := userIDRaw.(uuid.UUID)
+	if !ok {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Invalid user ID format"})
+		return
+	}
 
 	var req ClaimRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -170,7 +180,7 @@ func (h *Handler) ValidateClaim(c *gin.Context) {
 		return
 	}
 
-	success, err := h.service.ValidateClaimRequest(req, userID)
+	success, err := h.service.ValidateClaimRequest(req, userUUID.String())
 	if err != nil {
 		log.Printf("Claim validation failed: %v", err)
 		c.JSON(400, gin.H{"error": err.Error()})
