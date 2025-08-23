@@ -139,7 +139,16 @@ func (h *Handler) GetModuleCatalog(c *gin.Context) {
 
 // GetSecureZoneData returns encrypted zone data for client-side processing
 func (h *Handler) GetSecureZoneData(c *gin.Context) {
-	userID := c.GetString("user_id")
+	userIDRaw, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+		return
+	}
+	userUUID, ok := userIDRaw.(uuid.UUID)
+	if !ok {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Invalid user ID format"})
+		return
+	}
 	zoneID := c.Param("zone_id")
 
 	if zoneID == "" {
@@ -147,7 +156,9 @@ func (h *Handler) GetSecureZoneData(c *gin.Context) {
 		return
 	}
 
-	secureData, err := h.service.GetSecureZoneData(zoneID, userID)
+	log.Printf("🔐 [SCANNER] secure-data for user=%s zone=%s", userUUID, zoneID)
+
+	secureData, err := h.service.GetSecureZoneData(zoneID, userUUID.String())
 	if err != nil {
 		log.Printf("Failed to get secure zone data: %v", err)
 		c.JSON(500, gin.H{"error": "Failed to get zone data"})

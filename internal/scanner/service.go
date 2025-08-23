@@ -614,6 +614,10 @@ func (s *Service) ValidateClaimRequest(req ClaimRequest, userID string) (bool, e
 		if session.UserID != userID {
 			return false, fmt.Errorf("session does not belong to user")
 		}
+		// Check if session zone matches claim zone
+		if session.ZoneID != req.ZoneID {
+			return false, fmt.Errorf("zone mismatch for session")
+		}
 
 		// Check if session is expired
 		if time.Now().After(session.ExpiresAt) {
