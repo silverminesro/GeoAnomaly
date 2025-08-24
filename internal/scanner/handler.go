@@ -171,39 +171,5 @@ func (h *Handler) GetSecureZoneData(c *gin.Context) {
 	})
 }
 
-// ValidateClaim validates a claim request and processes the claim
-func (h *Handler) ValidateClaim(c *gin.Context) {
-	userIDRaw, exists := c.Get("user_id")
-	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
-		return
-	}
-
-	userUUID, ok := userIDRaw.(uuid.UUID)
-	if !ok {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Invalid user ID format"})
-		return
-	}
-
-	var req ClaimRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(400, gin.H{"error": "Invalid request format"})
-		return
-	}
-
-	success, err := h.service.ValidateClaimRequest(req, userUUID.String())
-	if err != nil {
-		log.Printf("Claim validation failed: %v", err)
-		c.JSON(400, gin.H{"error": err.Error()})
-		return
-	}
-
-	if success {
-		c.JSON(200, gin.H{
-			"success": true,
-			"message": "Item claimed successfully",
-		})
-	} else {
-		c.JSON(400, gin.H{"error": "Failed to claim item"})
-	}
-}
+// ✅ REMOVED: ValidateClaim handler - now using CollectItem system
+// Scanner now integrates with /game/zones/{zone_id}/collect endpoint

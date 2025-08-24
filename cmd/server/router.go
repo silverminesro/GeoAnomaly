@@ -390,7 +390,7 @@ func setupRoutes(db *gorm.DB, redisClient *redis.Client, r2Client *media.R2Clien
 				scannerRoutes.POST("/scan", scannerHandler.Scan)
 			}
 			scannerRoutes.GET("/zone/:zone_id/secure-data", scannerHandler.GetSecureZoneData)
-			scannerRoutes.POST("/claim", scannerHandler.ValidateClaim)
+			// ✅ REMOVED: scanner claim endpoint - now using CollectItem system
 		}
 	}
 

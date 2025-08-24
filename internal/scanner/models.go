@@ -5,8 +5,9 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/google/uuid"
 	"geoanomaly/internal/common"
+
+	"github.com/google/uuid"
 )
 
 // StringArray - custom typ pre JSONB string arrays
@@ -276,12 +277,5 @@ type ZoneArtifacts struct {
 	Timestamp time.Time         `json:"timestamp"`
 }
 
-// ClaimRequest represents a claim request with position verification
-type ClaimRequest struct {
-	ItemID       string  `json:"item_id" binding:"required"`
-	ItemType     string  `json:"item_type" binding:"required"` // "artifact" or "gear"
-	Latitude     float64 `json:"latitude" binding:"required"`
-	Longitude    float64 `json:"longitude" binding:"required"`
-	ZoneID       string  `json:"zone_id" binding:"required"`
-	SessionToken string  `json:"session_token" binding:"required"`
-}
+// ✅ REMOVED: ClaimRequest model - now using CollectItem system
+// Scanner now integrates with /game/zones/{zone_id}/collect endpoint
