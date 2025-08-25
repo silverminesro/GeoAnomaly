@@ -236,7 +236,7 @@ type ScannerModule struct {
 
 // TableName - explicitne špecifikuje názov tabuľky pre GORM
 func (ScannerModule) TableName() string {
-	return "scanner_modules"
+	return "scanner_modules_installed"
 }
 
 // ScannerStats - efektívne stats scanner (zjednodušené)
