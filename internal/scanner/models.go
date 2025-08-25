@@ -165,14 +165,19 @@ func (me *ModuleEffects) Scan(value interface{}) error {
 
 // PowerCellCatalog - definícia power cell
 type PowerCellCatalog struct {
-	Code         string       `json:"code" db:"code"`
+	Code         string       `json:"code" db:"code" gorm:"primaryKey"`
 	Name         string       `json:"name" db:"name"`
 	BaseMinutes  int          `json:"base_minutes" db:"base_minutes"`
-	CraftJSON    *CraftRecipe `json:"craft_json" db:"craft_json"`
+	CraftJSON    *CraftRecipe `json:"craft_json" db:"craft_json" gorm:"type:jsonb"`
 	PriceCredits int          `json:"price_credits" db:"price_credits"`
 	Version      int          `json:"version" db:"version"`
 	CreatedAt    time.Time    `json:"created_at" db:"created_at"`
 	UpdatedAt    time.Time    `json:"updated_at" db:"updated_at"`
+}
+
+// TableName - explicitne špecifikuje názov tabuľky pre GORM
+func (PowerCellCatalog) TableName() string {
+	return "power_cells_catalog"
 }
 
 // CraftRecipe - recept na craftovanie
@@ -197,7 +202,7 @@ func (cr *CraftRecipe) Scan(value interface{}) error {
 
 // ScannerInstance - hráčova scanner inštancia
 type ScannerInstance struct {
-	ID                   uuid.UUID  `json:"id" db:"id"`
+	ID                   uuid.UUID  `json:"id" db:"id" gorm:"primaryKey"`
 	OwnerID              uuid.UUID  `json:"owner_id" db:"owner_id"`
 	ScannerCode          string     `json:"scanner_code" db:"scanner_code"`
 	EnergyCap            *int       `json:"energy_cap" db:"energy_cap"`
@@ -208,9 +213,14 @@ type ScannerInstance struct {
 	CreatedAt            time.Time  `json:"created_at" db:"created_at"`
 	UpdatedAt            time.Time  `json:"updated_at" db:"updated_at"`
 
-	// Computed fields
-	Scanner *ScannerCatalog `json:"scanner,omitempty"`
-	Modules []ScannerModule `json:"modules,omitempty"`
+	// Computed fields - these are loaded separately, not foreign keys
+	Scanner *ScannerCatalog `json:"scanner,omitempty" gorm:"-"`
+	Modules []ScannerModule `json:"modules,omitempty" gorm:"-"`
+}
+
+// TableName - explicitne špecifikuje názov tabuľky pre GORM
+func (ScannerInstance) TableName() string {
+	return "scanner_instances"
 }
 
 // ScannerModule - inštalovaný modul
@@ -220,8 +230,13 @@ type ScannerModule struct {
 	ModuleCode  string    `json:"module_code" db:"module_code"`
 	InstalledAt time.Time `json:"installed_at" db:"installed_at"`
 
-	// Computed fields
-	Module *ModuleCatalog `json:"module,omitempty"`
+	// Computed fields - these are loaded separately, not foreign keys
+	Module *ModuleCatalog `json:"module,omitempty" gorm:"-"`
+}
+
+// TableName - explicitne špecifikuje názov tabuľky pre GORM
+func (ScannerModule) TableName() string {
+	return "scanner_modules"
 }
 
 // ScannerStats - efektívne stats scanner (zjednodušené)

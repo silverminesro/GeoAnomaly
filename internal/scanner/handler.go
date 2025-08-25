@@ -125,7 +125,9 @@ func (h *Handler) GetScannerStats(c *gin.Context) {
 func (h *Handler) GetScannerCatalog(c *gin.Context) {
 	var scanners []ScannerCatalog
 
-	if err := h.db.Find(&scanners).Error; err != nil {
+	// Explicitne vyber všetky polia okrem computed fields
+	if err := h.db.Select("id, code, name, tagline, description, base_range_m, base_fov_deg, caps_json, drain_mult, allowed_modules, slot_count, slot_types, is_basic, max_rarity, detect_artifacts, detect_gear, version, effective_from, created_at, updated_at").
+		Find(&scanners).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to load scanner catalog"})
 		return
 	}
@@ -164,7 +166,9 @@ func (h *Handler) GetScannerByCode(c *gin.Context) {
 func (h *Handler) GetModuleCatalog(c *gin.Context) {
 	var modules []ModuleCatalog
 
-	if err := h.db.Find(&modules).Error; err != nil {
+	// Explicitne vyber všetky polia okrem computed fields
+	if err := h.db.Select("id, code, name, type, effects_json, energy_cost, drain_mult, compatible_scanners, craft_json, store_price, version, created_at, updated_at").
+		Find(&modules).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to load module catalog"})
 		return
 	}

@@ -34,7 +34,9 @@ func NewService(db *gorm.DB, redisClient *redis.Client) *Service {
 func (s *Service) GetScannerByCode(code string) (*ScannerCatalog, error) {
 	var scanner ScannerCatalog
 
-	if err := s.db.Where("code = ?", code).First(&scanner).Error; err != nil {
+	// Explicitne vyber všetky polia okrem computed fields
+	if err := s.db.Select("id, code, name, tagline, description, base_range_m, base_fov_deg, caps_json, drain_mult, allowed_modules, slot_count, slot_types, is_basic, max_rarity, detect_artifacts, detect_gear, version, effective_from, created_at, updated_at").
+		Where("code = ?", code).First(&scanner).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil, fmt.Errorf("scanner with code '%s' not found", code)
 		}
@@ -53,8 +55,9 @@ func (s *Service) GetBasicScanner() (*ScannerCatalog, error) {
 func (s *Service) GetOrCreateScannerInstance(userID uuid.UUID) (*ScannerInstance, error) {
 	var instance ScannerInstance
 
-	// Skús nájsť existujúcu inštanciu
-	if err := s.db.Where("owner_id = ? AND is_active = true", userID).First(&instance).Error; err != nil {
+	// Skús nájsť existujúcu inštanciu - explicitne vyber len základné polia
+	if err := s.db.Select("id, owner_id, scanner_code, energy_cap, power_cell_code, power_cell_started_at, power_cell_minutes_left, is_active, created_at, updated_at").
+		Where("owner_id = ? AND is_active = true", userID).First(&instance).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			// Vytvor novú inštanciu s základným scannerom
 			basicScanner, err := s.GetBasicScanner()
@@ -96,9 +99,10 @@ func (s *Service) loadScannerDetails(instance *ScannerInstance) error {
 	}
 	instance.Scanner = scanner
 
-	// Načítaj inštalované moduly
+	// Načítaj inštalované moduly - explicitne vyber len základné polia
 	var modules []ScannerModule
-	if err := s.db.Where("instance_id = ?", instance.ID).Find(&modules).Error; err != nil {
+	if err := s.db.Select("instance_id, slot_index, module_code, installed_at").
+		Where("instance_id = ?", instance.ID).Find(&modules).Error; err != nil {
 		return fmt.Errorf("failed to load scanner modules: %w", err)
 	}
 
