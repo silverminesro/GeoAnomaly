@@ -687,13 +687,24 @@ func (h *Handler) CollectItem(c *gin.Context) {
 		return
 	}
 
-	// Check if user can collect this item
+	// Check if user can collect this item (tier validation)
 	canCollect, reason := h.CheckUserCanCollectItem(user.Tier, req.ItemType, req.ItemID)
 	if !canCollect {
 		c.JSON(http.StatusForbidden, gin.H{
 			"error":     "Cannot collect item",
 			"reason":    reason,
 			"your_tier": user.Tier,
+			"item_type": req.ItemType,
+		})
+		return
+	}
+
+	// Check scanner collection limits
+	scannerCanCollect, scannerReason := h.CheckScannerCanCollectItem(user.ID, req.ItemType, req.ItemID)
+	if !scannerCanCollect {
+		c.JSON(http.StatusForbidden, gin.H{
+			"error":     "Scanner cannot collect item",
+			"reason":    scannerReason,
 			"item_type": req.ItemType,
 		})
 		return

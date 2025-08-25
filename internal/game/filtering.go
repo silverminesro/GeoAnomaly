@@ -5,6 +5,9 @@ import (
 	"log"
 
 	"geoanomaly/internal/common"
+	"geoanomaly/internal/scanner"
+
+	"github.com/google/uuid"
 )
 
 // Main filtering functions that combine artifact and gear filtering
@@ -100,4 +103,56 @@ func (h *Handler) CheckUserCanCollectItem(userTier int, itemType, itemID string)
 	default:
 		return false, "Invalid item type"
 	}
+}
+
+// ✅ PRIDANÉ: Scanner collection validation
+func (h *Handler) CheckScannerCanCollectItem(userID uuid.UUID, itemType, itemID string) (bool, string) {
+	// Get user's scanner instance
+	var scannerInstance scanner.ScannerInstance
+	if err := h.db.Where("owner_id = ? AND is_active = true", userID).First(&scannerInstance).Error; err != nil {
+		return false, "No active scanner equipped"
+	}
+
+	// Get scanner catalog details
+	var scannerCatalog scanner.ScannerCatalog
+	if err := h.db.Where("code = ?", scannerInstance.ScannerCode).First(&scannerCatalog).Error; err != nil {
+		return false, "Scanner configuration not found"
+	}
+
+	// Get item details
+	var itemRarity string
+	switch itemType {
+	case "artifact":
+		var artifact common.Artifact
+		if err := h.db.First(&artifact, "id = ?", itemID).Error; err != nil {
+			return false, "Item not found"
+		}
+		itemRarity = artifact.Rarity
+	case "gear":
+		itemRarity = "common" // Gear nemá rarity, použijeme default
+	default:
+		return false, "Invalid item type"
+	}
+
+	// Check rarity limits
+	rarityLevels := map[string]int{
+		"common":    1,
+		"uncommon":  2,
+		"rare":      3,
+		"epic":      4,
+		"legendary": 5,
+	}
+
+	itemLevel, itemExists := rarityLevels[itemRarity]
+	collectLevel, collectExists := rarityLevels[scannerCatalog.CapsJSON.Limits.CollectMaxRarity]
+
+	if !itemExists || !collectExists {
+		return false, "Invalid rarity configuration"
+	}
+
+	if itemLevel > collectLevel {
+		return false, fmt.Sprintf("Scanner can only collect up to %s rarity", scannerCatalog.CapsJSON.Limits.CollectMaxRarity)
+	}
+
+	return true, ""
 }

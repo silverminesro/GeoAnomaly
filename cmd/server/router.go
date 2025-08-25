@@ -51,7 +51,7 @@ func setupRoutes(db *gorm.DB, redisClient *redis.Client, r2Client *media.R2Clien
 
 	// Initialize scanner service and handler
 	scannerService := scanner.NewService(db, redisClient)
-	scannerHandler := scanner.NewHandler(scannerService)
+	scannerHandler := scanner.NewHandler(scannerService, db)
 
 	// Initialize scanner rate limiter
 	var scannerRateLimiter *middleware.ScannerRateLimiter
@@ -381,6 +381,7 @@ func setupRoutes(db *gorm.DB, redisClient *redis.Client, r2Client *media.R2Clien
 		scannerRoutes := v1.Group("/scanner")
 		scannerRoutes.Use(middleware.JWTAuth())
 		{
+			scannerRoutes.GET("/catalog", scannerHandler.GetScannerCatalog)
 			scannerRoutes.GET("/instance", scannerHandler.GetScannerInstance)
 			scannerRoutes.GET("/stats", scannerHandler.GetScannerStats)
 			// apply rate-limiter ONLY to /scan

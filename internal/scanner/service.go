@@ -9,7 +9,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log"
 	"math"
 	"math/rand"
@@ -31,38 +30,13 @@ func NewService(db *gorm.DB, redisClient *redis.Client) *Service {
 	return &Service{db: db, redis: redisClient}
 }
 
-// GetBasicScanner - vráti základný scanner pre hráča
-func (s *Service) GetBasicScanner() (*ScannerCatalog, error) {
+// GetScannerByCode - načíta scanner z katalógu podľa kódu
+func (s *Service) GetScannerByCode(code string) (*ScannerCatalog, error) {
 	var scanner ScannerCatalog
 
-	// Načítaj scanner z databázy
-	if err := s.db.Where("code = ? AND is_basic = true", "echovane_mk0").First(&scanner).Error; err != nil {
+	if err := s.db.Where("code = ?", code).First(&scanner).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
-			// Fallback na hardcoded hodnoty ak scanner neexistuje v DB
-			return &ScannerCatalog{
-				Code:        "echovane_mk0",
-				Name:        "EchoVane Mk.0",
-				Tagline:     "Základný sektorový skener",
-				Description: "Minimalistický ručný pinger s 30° zorným klinom. Vždy ťa vedie k najbližšiemu nálezu.",
-				BaseRangeM:  50,
-				BaseFovDeg:  30,
-				CapsJSON: ScannerCaps{
-					RangePctMax:     40,
-					FovPctMax:       50,
-					ServerPollHzMax: 2.0,
-				},
-				DrainMult:       1.0,
-				AllowedModules:  StringArray{"mod_range_i", "mod_fov_i", "mod_response_i"},
-				SlotCount:       3,
-				SlotTypes:       StringArray{"power", "range", "fov"},
-				IsBasic:         true,
-				MaxRarity:       "rare", // Základný scanner môže detekovať len common a rare
-				DetectArtifacts: true,   // Môže detekovať artefakty
-				DetectGear:      true,   // Môže detekovať gear
-				Version:         1,
-				CreatedAt:       time.Now(),
-				UpdatedAt:       time.Now(),
-			}, nil
+			return nil, fmt.Errorf("scanner with code '%s' not found", code)
 		}
 		return nil, fmt.Errorf("failed to load scanner from database: %w", err)
 	}
@@ -70,531 +44,439 @@ func (s *Service) GetBasicScanner() (*ScannerCatalog, error) {
 	return &scanner, nil
 }
 
+// GetBasicScanner - vráti základný scanner pre hráča
+func (s *Service) GetBasicScanner() (*ScannerCatalog, error) {
+	return s.GetScannerByCode("echovane_mk0")
+}
+
 // GetOrCreateScannerInstance - vráti alebo vytvorí scanner inštanciu pre hráča
 func (s *Service) GetOrCreateScannerInstance(userID uuid.UUID) (*ScannerInstance, error) {
-	// TODO: Implement with GORM when scanner tables are migrated
-	// For now return mock instance
-	basicScanner, err := s.GetBasicScanner()
-	if err != nil {
-		return nil, err
+	var instance ScannerInstance
+
+	// Skús nájsť existujúcu inštanciu
+	if err := s.db.Where("owner_id = ? AND is_active = true", userID).First(&instance).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			// Vytvor novú inštanciu s základným scannerom
+			basicScanner, err := s.GetBasicScanner()
+			if err != nil {
+				return nil, fmt.Errorf("failed to get basic scanner: %w", err)
+			}
+
+			instance = ScannerInstance{
+				ID:          uuid.New(),
+				OwnerID:     userID,
+				ScannerCode: basicScanner.Code,
+				IsActive:    true,
+				CreatedAt:   time.Now(),
+				UpdatedAt:   time.Now(),
+			}
+
+			if err := s.db.Create(&instance).Error; err != nil {
+				return nil, fmt.Errorf("failed to create scanner instance: %w", err)
+			}
+		} else {
+			return nil, fmt.Errorf("failed to query scanner instance: %w", err)
+		}
 	}
 
-	instance := &ScannerInstance{
-		ID:          uuid.New(),
-		OwnerID:     userID,
-		ScannerCode: basicScanner.Code,
-		IsActive:    true,
-		CreatedAt:   time.Now(),
-		UpdatedAt:   time.Now(),
-		Scanner:     basicScanner,
-		Modules:     []ScannerModule{}, // prázdne moduly
+	// Načítaj scanner detaily
+	if err := s.loadScannerDetails(&instance); err != nil {
+		return nil, fmt.Errorf("failed to load scanner details: %w", err)
 	}
 
-	return instance, nil
+	return &instance, nil
 }
 
 // loadScannerDetails - načíta scanner catalog a moduly
 func (s *Service) loadScannerDetails(instance *ScannerInstance) error {
-	// TODO: Implement with GORM when scanner tables are migrated
-	// For now just return as is
+	// Načítaj scanner z katalógu
+	scanner, err := s.GetScannerByCode(instance.ScannerCode)
+	if err != nil {
+		return err
+	}
+	instance.Scanner = scanner
+
+	// Načítaj inštalované moduly
+	var modules []ScannerModule
+	if err := s.db.Where("instance_id = ?", instance.ID).Find(&modules).Error; err != nil {
+		return fmt.Errorf("failed to load scanner modules: %w", err)
+	}
+
+	// Načítaj detaily modulov
+	for i := range modules {
+		var moduleCatalog ModuleCatalog
+		if err := s.db.Where("code = ?", modules[i].ModuleCode).First(&moduleCatalog).Error; err != nil {
+			log.Printf("Warning: module %s not found in catalog", modules[i].ModuleCode)
+			continue
+		}
+		modules[i].Module = &moduleCatalog
+	}
+
+	instance.Modules = modules
 	return nil
 }
 
 // CalculateScannerStats - vypočíta efektívne stats scanner
 func (s *Service) CalculateScannerStats(instance *ScannerInstance) (*ScannerStats, error) {
 	if instance.Scanner == nil {
-		return nil, fmt.Errorf("scanner catalog not loaded")
+		return nil, fmt.Errorf("scanner details not loaded")
 	}
 
-	// Základné stats
 	stats := &ScannerStats{
-		RangeM:          instance.Scanner.BaseRangeM,
-		FovDeg:          instance.Scanner.BaseFovDeg,
-		ServerPollHz:    1.0,  // základná hodnota
-		LockOnThreshold: 0.85, // základná hodnota
-		EnergyCap:       100,  // basic energy cap
+		RangeM:           instance.Scanner.BaseRangeM,
+		FovDeg:           instance.Scanner.BaseFovDeg,
+		ServerPollHz:     instance.Scanner.CapsJSON.ScanConfig.ServerPollHz,
+		LockOnThreshold:  5.0, // Základný lock-on threshold
+		EnergyCap:        100, // Základná energia
+		VisualStyle:      instance.Scanner.CapsJSON.Visual.Style,
+		ScanMode:         instance.Scanner.CapsJSON.ScanConfig.Mode,
+		ClientTickHz:     instance.Scanner.CapsJSON.ScanConfig.ClientTickHz,
+		SeeMaxRarity:     instance.Scanner.CapsJSON.Limits.SeeMaxRarity,
+		CollectMaxRarity: instance.Scanner.CapsJSON.Limits.CollectMaxRarity,
 	}
 
-	// Puls Scanner specific stats
-	if s.isPulsScanner(instance.Scanner.Code) {
-		stats = s.calculatePulsScannerStats(instance, stats)
+	// Aplikuj moduly
+	for _, module := range instance.Modules {
+		if module.Module != nil {
+			s.applyModuleEffects(stats, module.Module)
+		}
 	}
-
-	// TODO: Implement module calculation with GORM when scanner tables are migrated
-	// For now return basic stats
 
 	return stats, nil
 }
 
-// isPulsScanner - kontroluje či je scanner puls typ
-func (s *Service) isPulsScanner(scannerCode string) bool {
-	return scannerCode == "puls_mk0" || scannerCode == "puls_mk1" || scannerCode == "puls_mk2"
+// applyModuleEffects - aplikuje účinky modulu na stats
+func (s *Service) applyModuleEffects(stats *ScannerStats, module *ModuleCatalog) {
+	effects := module.EffectsJSON
+
+	if effects.RangePct != nil {
+		stats.RangeM = int(float64(stats.RangeM) * (1 + float64(*effects.RangePct)/100))
+	}
+
+	if effects.FovPct != nil {
+		stats.FovDeg = int(float64(stats.FovDeg) * (1 + float64(*effects.FovPct)/100))
+	}
+
+	if effects.ServerPollHzAdd != nil {
+		stats.ServerPollHz += *effects.ServerPollHzAdd
+	}
+
+	if effects.LockOnThresholdDelta != nil {
+		stats.LockOnThreshold += *effects.LockOnThresholdDelta
+	}
 }
 
-// calculatePulsScannerStats - vypočíta stats pre puls scanner
-func (s *Service) calculatePulsScannerStats(instance *ScannerInstance, baseStats *ScannerStats) *ScannerStats {
-	stats := *baseStats // Copy base stats
-
-	// Pridaj puls-specific capabilities
-	if instance.Scanner.CapsJSON.WaveDurationMs != nil {
-		stats.WaveDurationMs = instance.Scanner.CapsJSON.WaveDurationMs
-	}
-	if instance.Scanner.CapsJSON.EchoDelayMs != nil {
-		stats.EchoDelayMs = instance.Scanner.CapsJSON.EchoDelayMs
-	}
-	if instance.Scanner.CapsJSON.MaxWaves != nil {
-		stats.MaxWaves = instance.Scanner.CapsJSON.MaxWaves
-	}
-	if instance.Scanner.CapsJSON.WaveSpeedMs != nil {
-		stats.WaveSpeedMs = instance.Scanner.CapsJSON.WaveSpeedMs
-	}
-	if instance.Scanner.CapsJSON.NoiseLevel != nil {
-		stats.NoiseLevel = instance.Scanner.CapsJSON.NoiseLevel
-	}
-	if instance.Scanner.CapsJSON.RealTimeCapable != nil {
-		stats.RealTimeCapable = instance.Scanner.CapsJSON.RealTimeCapable
-	}
-	if instance.Scanner.CapsJSON.AdvancedEcho != nil {
-		stats.AdvancedEcho = instance.Scanner.CapsJSON.AdvancedEcho
-	}
-	if instance.Scanner.CapsJSON.NoiseFilter != nil {
-		stats.NoiseFilter = instance.Scanner.CapsJSON.NoiseFilter
-	}
-
-	return &stats
-}
-
-// Scan - vykoná skenovanie
+// Scan - vykoná skenovanie v zóne
 func (s *Service) Scan(userID uuid.UUID, req *ScanRequest) (*ScanResponse, error) {
-	// Získaj scanner inštanciu
+	// Skontroluj či hráč má aktívnu zónu
+	zoneID, err := s.getActiveZoneID(userID)
+	if err != nil {
+		return nil, fmt.Errorf("must enter zone first to use scanner")
+	}
+
+	// Načítaj scanner inštanciu
 	instance, err := s.GetOrCreateScannerInstance(userID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get scanner instance: %w", err)
 	}
 
-	// Vypočítať stats
+	// Vypočítať scanner stats
 	stats, err := s.CalculateScannerStats(instance)
 	if err != nil {
 		return nil, fmt.Errorf("failed to calculate scanner stats: %w", err)
 	}
 
-	// Hľadaj items v dosahu
-	scanResults, err := s.findItemsInRange(userID, req.Latitude, req.Longitude, req.Heading, stats)
+	// Načítaj itemy v zóne
+	artifacts, gear, err := s.getZoneItems(zoneID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to find items: %w", err)
+		return nil, fmt.Errorf("failed to get zone items: %w", err)
 	}
 
-	response := &ScanResponse{
+	// Filtruj itemy podľa scanner schopností
+	scanResults := s.filterItemsByScanner(artifacts, gear, req, stats, instance.Scanner)
+
+	return &ScanResponse{
 		Success:      true,
 		ScanResults:  scanResults,
 		ScannerStats: stats,
-	}
-
-	log.Printf("🔍 [SCANNER] User %s scanned at (%.6f, %.6f) heading %.1f° - found %d items",
-		userID, req.Latitude, req.Longitude, req.Heading, len(scanResults))
-
-	return response, nil
+	}, nil
 }
 
-// findItemsInRange - nájde items v dosahu scanner
-func (s *Service) findItemsInRange(userID uuid.UUID, lat, lon, heading float64, stats *ScannerStats) ([]ScanResult, error) {
-	// 1. Skontroluj či je hráč v aktívnej zóne
-	activeZone, err := s.getActiveZoneForPlayer(userID)
-	if err != nil || activeZone == nil {
-		// Hráč nie je v zóne - scanner vyžaduje enter zone
-		log.Printf("🔍 [SCANNER] User %s scanned outside of active zone - must enter zone first", userID)
-		return nil, fmt.Errorf("must enter zone first to use scanner")
-	}
-
-	// 2. Hráč je v zóne - hľadaj items v zóne
-	log.Printf("🔍 [SCANNER] User %s scanning in zone %s", userID, activeZone.ID)
-
-	// Získaj scanner inštanciu pre detaily
-	scannerInstance, err := s.GetOrCreateScannerInstance(userID)
+// getActiveZoneID - získa ID aktívnej zóny hráča
+func (s *Service) getActiveZoneID(userID uuid.UUID) (string, error) {
+	// Skontroluj Redis session
+	sessionKey := fmt.Sprintf("user_session:%s", userID.String())
+	zoneID, err := s.redis.Get(context.Background(), sessionKey).Result()
 	if err != nil {
-		log.Printf("🔍 [SCANNER] Failed to get scanner instance: %v", err)
-		return s.findItemsInZone(activeZone.ID, lat, lon, heading, stats, nil)
+		if err == redis.Nil {
+			return "", fmt.Errorf("no active zone session")
+		}
+		return "", fmt.Errorf("failed to get session: %w", err)
 	}
-
-	return s.findItemsInZone(activeZone.ID, lat, lon, heading, stats, scannerInstance)
+	return zoneID, nil
 }
 
-// getActiveZoneForPlayer - získa aktívnu zónu pre hráča
-func (s *Service) getActiveZoneForPlayer(userID uuid.UUID) (*common.Zone, error) {
-	// Skontroluj PlayerSession pre aktuálnu zónu
-	var session common.PlayerSession
-	if err := s.db.Where("user_id = ?", userID).First(&session).Error; err != nil {
-		log.Printf("🔍 [SCANNER] User %s has no active session", userID)
-		return nil, nil // Hráč nie je v zóne
+// getZoneItems - načíta artefakty a gear v zóne
+func (s *Service) getZoneItems(zoneID string) ([]common.Artifact, []common.Gear, error) {
+	// Validácia UUID formátu
+	if _, err := uuid.Parse(zoneID); err != nil {
+		return nil, nil, fmt.Errorf("invalid zone ID: %w", err)
 	}
 
-	if session.CurrentZone == nil {
-		log.Printf("🔍 [SCANNER] User %s is not in any zone", userID)
-		return nil, nil // Hráč nie je v zóne
+	var artifacts []common.Artifact
+	if err := s.db.Where("zone_id = ? AND is_active = true AND is_claimed = false", zoneID).Find(&artifacts).Error; err != nil {
+		return nil, nil, fmt.Errorf("failed to load artifacts: %w", err)
 	}
 
-	// Skontroluj či zóna existuje a je aktívna
-	var zone common.Zone
-	if err := s.db.Where("id = ? AND is_active = true", session.CurrentZone).First(&zone).Error; err != nil {
-		log.Printf("🔍 [SCANNER] User %s zone %s not found or inactive", userID, session.CurrentZone)
-		return nil, nil // Zóna neexistuje alebo nie je aktívna
+	var gear []common.Gear
+	if err := s.db.Where("zone_id = ? AND is_active = true AND is_claimed = false", zoneID).Find(&gear).Error; err != nil {
+		return nil, nil, fmt.Errorf("failed to load gear: %w", err)
 	}
 
-	log.Printf("🔍 [SCANNER] User %s is in active zone %s (%s)", userID, zone.ID, zone.Name)
-	return &zone, nil
+	return artifacts, gear, nil
 }
 
-// findItemsInZone - nájde items v zóne
-func (s *Service) findItemsInZone(zoneID uuid.UUID, lat, lon, heading float64, stats *ScannerStats, scannerInstance *ScannerInstance) ([]ScanResult, error) {
+// filterItemsByScanner - filtruje itemy podľa scanner schopností
+func (s *Service) filterItemsByScanner(artifacts []common.Artifact, gear []common.Gear, req *ScanRequest, stats *ScannerStats, scanner *ScannerCatalog) []ScanResult {
 	var results []ScanResult
 
-	// Získaj scanner schopnosti
-	scannerMaxRarity := "common" // Default
-	detectArtifacts := true      // Default
-	detectGear := true           // Default
-
-	if scannerInstance != nil && scannerInstance.Scanner != nil {
-		scannerMaxRarity = scannerInstance.Scanner.MaxRarity
-		detectArtifacts = scannerInstance.Scanner.DetectArtifacts
-		detectGear = scannerInstance.Scanner.DetectGear
-	}
-
-	log.Printf("🔍 [SCANNER] Scanner capabilities - MaxRarity: %s, DetectArtifacts: %v, DetectGear: %v",
-		scannerMaxRarity, detectArtifacts, detectGear)
-
-	// 1. Nájdi artefakty v zóne (ak scanner môže detekovať artefakty)
-	if detectArtifacts {
-		var artifacts []common.Artifact
-		if err := s.db.Where("zone_id = ? AND is_active = true", zoneID).Find(&artifacts).Error; err != nil {
-			log.Printf("🔍 [SCANNER] Failed to load artifacts for zone %s: %v", zoneID, err)
-		} else {
-			log.Printf("🔍 [SCANNER] Found %d artifacts in zone", len(artifacts))
-
-			// Spracuj artefakty
-			for _, artifact := range artifacts {
-				// Skontroluj či scanner môže detekovať túto rarity
-				if !s.canDetectRarity(scannerMaxRarity, artifact.Rarity) {
-					log.Printf("🔍 [SCANNER] Skipping %s artifact (rarity: %s, scanner max: %s)",
-						artifact.Name, artifact.Rarity, scannerMaxRarity)
-					continue
+	// Filtruj artefakty
+	if scanner.DetectArtifacts {
+		for _, artifact := range artifacts {
+			if s.canDetectItem(artifact.Rarity, scanner.CapsJSON.Limits.SeeMaxRarity) {
+				result := s.createScanResult(&artifact, req, stats)
+				if result != nil {
+					results = append(results, *result)
 				}
-
-				distance := s.calculateDistance(lat, lon, artifact.Location.Latitude, artifact.Location.Longitude)
-
-				// Len items do 50m
-				if distance > 50 {
-					continue
-				}
-
-				bearing := s.calculateBearing(lat, lon, artifact.Location.Latitude, artifact.Location.Longitude)
-
-				// Základný signal strength
-				signalStrength := s.calculateSignalStrength(distance, stats.RangeM, bearing, heading, float64(stats.FovDeg))
-
-				// Pridaj rušenie - čím ďalej, tým väčšie rušenie
-				signalStrength = s.addSignalNoise(signalStrength, int(distance))
-
-				results = append(results, ScanResult{
-					Type:           "artifact",
-					DistanceM:      distance,
-					BearingDeg:     bearing,
-					SignalStrength: signalStrength,
-					Name:           artifact.Name,
-					Rarity:         artifact.Rarity,
-					ItemID:         &artifact.ID,
-				})
-
-				log.Printf("🔍 [SCANNER] Detected artifact: %s (rarity: %s, distance: %dm)",
-					artifact.Name, artifact.Rarity, distance)
 			}
 		}
 	}
 
-	// 2. Nájdi gear items v zóne (ak scanner môže detekovať gear)
-	if detectGear {
-		var gear []common.Gear
-		if err := s.db.Where("zone_id = ? AND is_active = true", zoneID).Find(&gear).Error; err != nil {
-			log.Printf("🔍 [SCANNER] Failed to load gear for zone %s: %v", zoneID, err)
-		} else {
-			log.Printf("🔍 [SCANNER] Found %d gear items in zone", len(gear))
-
-			// Spracuj gear items
-			for _, gearItem := range gear {
-				distance := s.calculateDistance(lat, lon, gearItem.Location.Latitude, gearItem.Location.Longitude)
-
-				// Len items do 50m
-				if distance > 50 {
-					continue
+	// Filtruj gear
+	if scanner.DetectGear {
+		for _, g := range gear {
+			// Gear nemá rarity, použijeme "common" ako default
+			if s.canDetectItem("common", scanner.CapsJSON.Limits.SeeMaxRarity) {
+				result := s.createScanResult(&g, req, stats)
+				if result != nil {
+					results = append(results, *result)
 				}
-
-				bearing := s.calculateBearing(lat, lon, gearItem.Location.Latitude, gearItem.Location.Longitude)
-
-				// Základný signal strength
-				signalStrength := s.calculateSignalStrength(distance, stats.RangeM, bearing, heading, float64(stats.FovDeg))
-
-				// Pridaj rušenie - čím ďalej, tým väčšie rušenie
-				signalStrength = s.addSignalNoise(signalStrength, int(distance))
-
-				results = append(results, ScanResult{
-					Type:           "gear",
-					DistanceM:      distance,
-					BearingDeg:     bearing,
-					SignalStrength: signalStrength,
-					Name:           gearItem.Name,
-					Rarity:         "common", // Gear nemá rarity v databáze, použijeme common
-					ItemID:         &gearItem.ID,
-				})
-
-				log.Printf("🔍 [SCANNER] Detected gear: %s (distance: %dm)", gearItem.Name, distance)
 			}
 		}
 	}
 
-	log.Printf("🔍 [SCANNER] Total items detected: %d", len(results))
-	return results, nil
+	return results
 }
 
-// addSignalNoise - pridá rušenie do signal strength
-func (s *Service) addSignalNoise(signalStrength float64, distanceM int) float64 {
-	// Čím ďalej, tým väčšie rušenie (0% na 0m, 100% na 50m)
-	noiseFactor := float64(distanceM) / 50.0
-
-	// Náhodné rušenie ±20%
-	noise := (rand.Float64() - 0.5) * 0.4 * noiseFactor
-
-	// Aplikuj rušenie
-	result := signalStrength + noise
-
-	// Obmedz na 0-1
-	return math.Max(0.0, math.Min(1.0, result))
-}
-
-// canDetectRarity - skontroluje či scanner môže detekovať danú rarity
-func (s *Service) canDetectRarity(scannerMaxRarity, itemRarity string) bool {
-	// Rarity hierarchy (od najnižšej po najvyššiu)
+// canDetectItem - skontroluje či scanner môže detekovať item danej rarity
+func (s *Service) canDetectItem(itemRarity, maxRarity string) bool {
 	rarityLevels := map[string]int{
-		"common":    0,
-		"rare":      1,
-		"epic":      2,
-		"legendary": 3,
+		"common":    1,
+		"uncommon":  2,
+		"rare":      3,
+		"epic":      4,
+		"legendary": 5,
 	}
 
-	scannerLevel, scannerExists := rarityLevels[scannerMaxRarity]
 	itemLevel, itemExists := rarityLevels[itemRarity]
+	maxLevel, maxExists := rarityLevels[maxRarity]
 
-	if !scannerExists || !itemExists {
-		return false // Neznáme rarity
+	if !itemExists || !maxExists {
+		return false
 	}
 
-	// Scanner môže detekovať item ak je jeho max rarity >= item rarity
-	return scannerLevel >= itemLevel
+	return itemLevel <= maxLevel
 }
 
-// Helper functions remain the same
+// createScanResult - vytvorí scan result pre item
+func (s *Service) createScanResult(item interface{}, req *ScanRequest, stats *ScannerStats) *ScanResult {
+	var itemLat, itemLng float64
+	var itemID uuid.UUID
+	var itemName, itemRarity, itemType string
 
-// calculateDistance - vypočíta vzdialenosť v metroch
-func (s *Service) calculateDistance(lat1, lon1, lat2, lon2 float64) int {
-	const R = 6371000 // polomer Zeme v metroch
+	// Extrahuj dáta z item
+	switch v := item.(type) {
+	case *common.Artifact:
+		itemLat = v.Location.Latitude
+		itemLng = v.Location.Longitude
+		itemID = v.ID
+		itemName = v.Name
+		itemRarity = v.Rarity
+		itemType = "artifact"
+	case *common.Gear:
+		itemLat = v.Location.Latitude
+		itemLng = v.Location.Longitude
+		itemID = v.ID
+		itemName = v.Name
+		itemRarity = "common" // Gear nemá rarity, použijeme default
+		itemType = "gear"
+	default:
+		return nil
+	}
+
+	// Vypočítať vzdialenosť a bearing
+	distanceM := s.calculateDistance(req.Latitude, req.Longitude, itemLat, itemLng)
+	bearingDeg := s.calculateBearing(req.Latitude, req.Longitude, itemLat, itemLng)
+
+	// Skontroluj či je v dosahu
+	if distanceM > stats.RangeM {
+		return nil
+	}
+
+	// Vypočítať signal strength
+	signalStrength := s.calculateSignalStrength(distanceM, stats)
+
+	return &ScanResult{
+		Type:           itemType,
+		DistanceM:      distanceM,
+		BearingDeg:     bearingDeg,
+		SignalStrength: signalStrength,
+		ItemID:         &itemID,
+		Name:           itemName,
+		Rarity:         itemRarity,
+	}
+}
+
+// calculateDistance - vypočíta vzdialenosť medzi dvoma bodmi
+func (s *Service) calculateDistance(lat1, lng1, lat2, lng2 float64) int {
+	const earthRadius = 6371000 // meters
 
 	lat1Rad := lat1 * math.Pi / 180
 	lat2Rad := lat2 * math.Pi / 180
 	deltaLat := (lat2 - lat1) * math.Pi / 180
-	deltaLon := (lon2 - lon1) * math.Pi / 180
+	deltaLng := (lng2 - lng1) * math.Pi / 180
 
 	a := math.Sin(deltaLat/2)*math.Sin(deltaLat/2) +
 		math.Cos(lat1Rad)*math.Cos(lat2Rad)*
-			math.Sin(deltaLon/2)*math.Sin(deltaLon/2)
+			math.Sin(deltaLng/2)*math.Sin(deltaLng/2)
 	c := 2 * math.Atan2(math.Sqrt(a), math.Sqrt(1-a))
 
-	return int(R * c)
+	return int(earthRadius * c)
 }
 
-// calculateBearing - vypočíta bearing v stupňoch
-func (s *Service) calculateBearing(lat1, lon1, lat2, lon2 float64) float64 {
+// calculateBearing - vypočíta bearing medzi dvoma bodmi
+func (s *Service) calculateBearing(lat1, lng1, lat2, lng2 float64) float64 {
 	lat1Rad := lat1 * math.Pi / 180
 	lat2Rad := lat2 * math.Pi / 180
-	deltaLon := (lon2 - lon1) * math.Pi / 180
+	deltaLng := (lng2 - lng1) * math.Pi / 180
 
-	y := math.Sin(deltaLon) * math.Cos(lat2Rad)
+	y := math.Sin(deltaLng) * math.Cos(lat2Rad)
 	x := math.Cos(lat1Rad)*math.Sin(lat2Rad) -
-		math.Sin(lat1Rad)*math.Cos(lat2Rad)*math.Cos(deltaLon)
+		math.Sin(lat1Rad)*math.Cos(lat2Rad)*math.Cos(deltaLng)
 
 	bearing := math.Atan2(y, x) * 180 / math.Pi
 	return math.Mod(bearing+360, 360)
 }
 
-// isInFieldOfView - skontroluje či je item v zornom poli
-func (s *Service) isInFieldOfView(bearingDeg, headingDeg, fovDeg float64) bool {
-	diff := math.Abs(bearingDeg - headingDeg)
-	if diff > 180 {
-		diff = 360 - diff
-	}
-	return diff <= float64(fovDeg)/2
-}
+// calculateSignalStrength - vypočíta silu signálu
+func (s *Service) calculateSignalStrength(distanceM int, stats *ScannerStats) float64 {
+	// Základná sila signálu (1.0 na 0m, 0.0 na max dosahu)
+	baseStrength := 1.0 - float64(distanceM)/float64(stats.RangeM)
 
-// calculateSignalStrength - vypočíta silu signálu (0-1)
-func (s *Service) calculateSignalStrength(distanceM, maxRangeM int, bearingDeg, headingDeg, fovDeg float64) float64 {
-	// Vzdialenosť factor (1 na 0m, 0 na maxRangeM)
-	distanceFactor := math.Max(0, 1-float64(distanceM)/float64(maxRangeM))
+	// Pridaj náhodný šum
+	noise := (rand.Float64() - 0.5) * 0.1
 
-	// FOV factor (1 v strede, 0 na okrajoch)
-	diff := math.Abs(bearingDeg - headingDeg)
-	if diff > 180 {
-		diff = 360 - diff
-	}
-	fovFactor := math.Max(0, 1-diff/(float64(fovDeg)/2))
+	// Obmedz na rozsah 0.0 - 1.0
+	strength := math.Max(0.0, math.Min(1.0, baseStrength+noise))
 
-	// Kombinovaný signal strength
-	signalStrength := distanceFactor * fovFactor
-
-	// Aplikuj nelineárnu krivku
-	return math.Pow(signalStrength, 0.8)
+	return strength
 }
 
 // GetSecureZoneData returns encrypted zone data for client-side processing
 func (s *Service) GetSecureZoneData(zoneID string, userID string) (*SecureZoneData, error) {
-	// Get all artifacts and gear in the zone
-	artifacts, err := s.getAllArtifactsInZone(zoneID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get artifacts: %w", err)
+	// Validate zone ID format
+	if _, err := uuid.Parse(zoneID); err != nil {
+		return nil, fmt.Errorf("invalid zone ID: %w", err)
 	}
 
-	gear, err := s.getAllGearInZone(zoneID)
+	// Load zone artifacts
+	artifacts, gear, err := s.getZoneItems(zoneID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get gear: %w", err)
+		return nil, fmt.Errorf("failed to load zone items: %w", err)
 	}
 
-	// Create zone artifacts data
-	zoneData := ZoneArtifacts{
+	// Create zone artifacts structure
+	zoneArtifacts := ZoneArtifacts{
 		Artifacts: artifacts,
 		Gear:      gear,
 		ZoneID:    zoneID,
 		Timestamp: time.Now(),
 	}
 
-	// Encrypt the data
-	encryptedData, err := s.encryptZoneData(zoneData, userID)
+	// Serialize to JSON
+	jsonData, err := json.Marshal(zoneArtifacts)
+	if err != nil {
+		return nil, fmt.Errorf("failed to serialize zone data: %w", err)
+	}
+
+	// Generate encryption key (in production, use proper key management)
+	key := s.generateEncryptionKey(zoneID, userID)
+
+	// Encrypt data
+	encryptedData, err := s.encryptData(jsonData, key)
 	if err != nil {
 		return nil, fmt.Errorf("failed to encrypt zone data: %w", err)
 	}
 
-	// Create session token
-	sessionToken := s.createSessionToken(userID, zoneID)
+	// Generate session token
+	sessionToken := s.generateSessionToken(zoneID, userID)
 
-	// Create scan session
-	session := ScanSession{
-		UserID:    userID,
-		ZoneID:    zoneID,
-		ScanCount: 0,
-		MaxScans:  50, // 50 scans per session
-		CreatedAt: time.Now(),
-		ExpiresAt: time.Now().Add(10 * time.Minute), // 10 minute session
-	}
-
-	// Store session in Redis
-	if s.redis != nil {
-		sessionKey := fmt.Sprintf("scan_session:%s", sessionToken)
-		sessionJSON, _ := json.Marshal(session)
-		err = s.redis.Set(context.Background(), sessionKey, sessionJSON, 10*time.Minute).Err()
-		if err != nil {
-			log.Printf("Warning: Failed to store session in Redis: %v", err)
-		}
-	}
-
-	// Generate zone hash for verification
-	zoneHash := s.generateZoneHash(zoneID, userID)
-
-	return &SecureZoneData{
-		EncryptedArtifacts: encryptedData,
-		ZoneHash:           zoneHash,
+	// Create secure data
+	secureData := &SecureZoneData{
+		EncryptedArtifacts: base64.StdEncoding.EncodeToString(encryptedData),
+		ZoneHash:           s.generateZoneHash(zoneID),
 		SessionToken:       sessionToken,
-		ExpiresAt:          session.ExpiresAt,
-		MaxScans:           session.MaxScans,
+		ExpiresAt:          time.Now().Add(30 * time.Minute),
+		MaxScans:           100,
 		ScanCount:          0,
-	}, nil
+	}
+
+	return secureData, nil
 }
 
-// encryptZoneData encrypts zone artifacts data with user-specific key
-func (s *Service) encryptZoneData(data ZoneArtifacts, userID string) (string, error) {
-	// Convert data to JSON
-	jsonData, err := json.Marshal(data)
-	if err != nil {
-		return "", err
-	}
+// generateEncryptionKey - generuje kľúč pre šifrovanie
+func (s *Service) generateEncryptionKey(zoneID, userID string) []byte {
+	// V produkcii použite proper key management
+	keyData := zoneID + ":" + userID + ":geoanomaly_secret"
+	hash := sha256.Sum256([]byte(keyData))
+	return hash[:32] // AES-256 potrebuje 32 bajty
+}
 
-	// Create user-specific encryption key
-	key := s.generateUserKey(userID)
-
-	// Create cipher
+// encryptData - zašifruje dáta pomocou AES
+func (s *Service) encryptData(data []byte, key []byte) ([]byte, error) {
 	block, err := aes.NewCipher(key)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
-	// Create GCM mode
-	gcm, err := cipher.NewGCM(block)
-	if err != nil {
-		return "", err
+	// Generate IV
+	iv := make([]byte, aes.BlockSize)
+	if _, err := cryptorand.Read(iv); err != nil {
+		return nil, err
 	}
 
-	// Create nonce
-	nonce := make([]byte, gcm.NonceSize())
-	if _, err := io.ReadFull(cryptorand.Reader, nonce); err != nil {
-		return "", err
-	}
+	// Encrypt
+	ciphertext := make([]byte, len(data))
+	stream := cipher.NewCFBEncrypter(block, iv)
+	stream.XORKeyStream(ciphertext, data)
 
-	// Encrypt data
-	ciphertext := gcm.Seal(nonce, nonce, jsonData, nil)
+	// Combine IV and ciphertext
+	result := make([]byte, 0, len(iv)+len(ciphertext))
+	result = append(result, iv...)
+	result = append(result, ciphertext...)
 
-	// Return base64 encoded
-	return base64.StdEncoding.EncodeToString(ciphertext), nil
+	return result, nil
 }
 
-// generateUserKey creates a deterministic key for user
-func (s *Service) generateUserKey(userID string) []byte {
-	// Use a combination of user ID and server secret
-	secret := "GeoAnomalySecret2024" // In production, use environment variable
-	data := userID + secret
+// generateSessionToken - generuje session token
+func (s *Service) generateSessionToken(zoneID, userID string) string {
+	data := zoneID + ":" + userID + ":" + time.Now().Format(time.RFC3339)
 	hash := sha256.Sum256([]byte(data))
-	return hash[:32] // Use first 32 bytes for AES-256
+	return base64.StdEncoding.EncodeToString(hash[:])
 }
 
-// createSessionToken creates a unique session token
-func (s *Service) createSessionToken(userID, zoneID string) string {
-	data := fmt.Sprintf("%s:%s:%d", userID, zoneID, time.Now().UnixNano())
-	hash := sha256.Sum256([]byte(data))
-	return base64.StdEncoding.EncodeToString(hash[:16])
+// generateZoneHash - generuje hash zóny
+func (s *Service) generateZoneHash(zoneID string) string {
+	hash := sha256.Sum256([]byte(zoneID))
+	return base64.StdEncoding.EncodeToString(hash[:])
 }
-
-// generateZoneHash creates a hash for zone verification
-func (s *Service) generateZoneHash(zoneID, userID string) string {
-	data := fmt.Sprintf("%s:%s:%s", zoneID, userID, "GeoAnomalyZoneHash")
-	hash := sha256.Sum256([]byte(data))
-	return base64.StdEncoding.EncodeToString(hash[:16])
-}
-
-// getAllArtifactsInZone retrieves all artifacts in a zone
-func (s *Service) getAllArtifactsInZone(zoneID string) ([]common.Artifact, error) {
-	var artifacts []common.Artifact
-	zoneUUID, err := uuid.Parse(zoneID)
-	if err != nil {
-		return nil, fmt.Errorf("invalid zone ID: %w", err)
-	}
-	err = s.db.Where("zone_id = ? AND is_active = true", zoneUUID).Find(&artifacts).Error
-	return artifacts, err
-}
-
-// getAllGearInZone retrieves all gear items in a zone
-func (s *Service) getAllGearInZone(zoneID string) ([]common.Gear, error) {
-	var gear []common.Gear
-	zoneUUID, err := uuid.Parse(zoneID)
-	if err != nil {
-		return nil, fmt.Errorf("invalid zone ID: %w", err)
-	}
-	err = s.db.Where("zone_id = ? AND is_active = true", zoneUUID).Find(&gear).Error
-	return gear, err
-}
-
-// ✅ REMOVED: ValidateClaimRequest service - now using CollectItem system
-// Scanner now integrates with /game/zones/{zone_id}/collect endpoint
-// CollectItem handles: distance validation, item deactivation, inventory addition, XP rewards

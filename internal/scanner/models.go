@@ -56,21 +56,52 @@ func (ScannerCatalog) TableName() string {
 	return "scanner_catalog"
 }
 
-// ScannerCaps - limity scanner
+// ScannerCaps - nová štruktúra scanner capabilities podľa V-HUD systému
 type ScannerCaps struct {
-	RangePctMax     int     `json:"range_pct_max"`
-	FovPctMax       int     `json:"fov_pct_max"`
-	ServerPollHzMax float64 `json:"server_poll_hz_max"`
+	// Visual settings
+	Visual VisualSettings `json:"visual"`
 
-	// Puls Scanner specific capabilities
-	WaveDurationMs  *int     `json:"wave_duration_ms,omitempty"`  // Duration of wave animation in milliseconds
-	EchoDelayMs     *int     `json:"echo_delay_ms,omitempty"`     // Delay before echo signals appear
-	MaxWaves        *int     `json:"max_waves,omitempty"`         // Maximum number of concurrent waves
-	WaveSpeedMs     *int     `json:"wave_speed_ms,omitempty"`     // Wave propagation speed in m/s
-	NoiseLevel      *float64 `json:"noise_level,omitempty"`       // Noise level (0.0 - 1.0)
-	RealTimeCapable *bool    `json:"real_time_capable,omitempty"` // Can operate in real-time mode
-	AdvancedEcho    *bool    `json:"advanced_echo,omitempty"`     // Has advanced echo processing
-	NoiseFilter     *bool    `json:"noise_filter,omitempty"`      // Has built-in noise filtering
+	// Scan behavior
+	ScanConfig ScanSettings `json:"scan"`
+
+	// Detection limits
+	Limits DetectionLimits `json:"limits"`
+
+	// Item filters
+	Filters ItemFilters `json:"filters"`
+}
+
+// VisualSettings - vizuálne nastavenia scanner
+type VisualSettings struct {
+	Style string `json:"style"` // "v_hud", "pulse", "radar", etc.
+}
+
+// ScanSettings - nastavenia skenovania
+type ScanSettings struct {
+	Mode         string         `json:"mode"`           // "continuous", "pulse", "single"
+	ClientTickHz int            `json:"client_tick_hz"` // Hz pre client-side rendering
+	ServerPollHz float64        `json:"server_poll_hz"` // Hz pre server-side polling
+	LockOn       LockOnSettings `json:"lock_on"`        // Lock-on nastavenia
+}
+
+// LockOnSettings - nastavenia lock-on mechanizmu
+type LockOnSettings struct {
+	AngleDeg int `json:"angle_deg"` // Uhol pre lock-on v stupňoch
+	RadiusM  int `json:"radius_m"`  // Polomer lock-on v metroch
+}
+
+// DetectionLimits - limity detekcie
+type DetectionLimits struct {
+	RangeM           int    `json:"range_m"`            // Dosah v metroch
+	FovDeg           int    `json:"fov_deg"`            // Field of view v stupňoch
+	SeeMaxRarity     string `json:"see_max_rarity"`     // Najvyššia rarity ktorú môže vidieť
+	CollectMaxRarity string `json:"collect_max_rarity"` // Najvyššia rarity ktorú môže získať
+}
+
+// ItemFilters - filtre pre typy itemov
+type ItemFilters struct {
+	Artifacts bool `json:"artifacts"` // Môže detekovať artefakty
+	Gear      bool `json:"gear"`      // Môže detekovať gear
 }
 
 // Value a Scan pre JSONB
@@ -108,7 +139,7 @@ func (ModuleCatalog) TableName() string {
 	return "module_catalog"
 }
 
-// ModuleEffects - účinky modulu
+// ModuleEffects - účinky modulu (zjednodušené)
 type ModuleEffects struct {
 	RangePct             *int     `json:"range_pct,omitempty"`
 	FovPct               *int     `json:"fov_pct,omitempty"`
@@ -117,16 +148,6 @@ type ModuleEffects struct {
 	OffSectorHint        *bool    `json:"off_sector_hint,omitempty"`
 	HapticsBoost         *bool    `json:"haptics_boost,omitempty"`
 	TurnHintDistanceM    *int     `json:"turn_hint_distance_m,omitempty"`
-
-	// Puls Scanner specific effects
-	NoiseReduction   *float64 `json:"noise_reduction,omitempty"`   // Reduces noise level
-	EchoClarity      *float64 `json:"echo_clarity,omitempty"`      // Improves echo signal clarity
-	EchoStrength     *float64 `json:"echo_strength,omitempty"`     // Increases echo signal strength
-	RangeBoost       *float64 `json:"range_boost,omitempty"`       // Additional range boost
-	SignalClarity    *float64 `json:"signal_clarity,omitempty"`    // Improves overall signal clarity
-	WavePower        *float64 `json:"wave_power,omitempty"`        // Increases wave power
-	Penetration      *float64 `json:"penetration,omitempty"`       // Improves wave penetration
-	EnergyEfficiency *float64 `json:"energy_efficiency,omitempty"` // Improves energy efficiency
 }
 
 // Value a Scan pre JSONB
@@ -203,7 +224,7 @@ type ScannerModule struct {
 	Module *ModuleCatalog `json:"module,omitempty"`
 }
 
-// ScannerStats - efektívne stats scanner
+// ScannerStats - efektívne stats scanner (zjednodušené)
 type ScannerStats struct {
 	RangeM           int     `json:"range_m"`
 	FovDeg           int     `json:"fov_deg"`
@@ -212,15 +233,14 @@ type ScannerStats struct {
 	EnergyCap        int     `json:"energy_cap"`
 	PowerCellMinutes *int    `json:"power_cell_minutes,omitempty"`
 
-	// Puls Scanner specific stats
-	WaveDurationMs  *int     `json:"wave_duration_ms,omitempty"`  // Duration of wave animation in milliseconds
-	EchoDelayMs     *int     `json:"echo_delay_ms,omitempty"`     // Delay before echo signals appear
-	MaxWaves        *int     `json:"max_waves,omitempty"`         // Maximum number of concurrent waves
-	WaveSpeedMs     *int     `json:"wave_speed_ms,omitempty"`     // Wave propagation speed in m/s
-	NoiseLevel      *float64 `json:"noise_level,omitempty"`       // Noise level (0.0 - 1.0)
-	RealTimeCapable *bool    `json:"real_time_capable,omitempty"` // Can operate in real-time mode
-	AdvancedEcho    *bool    `json:"advanced_echo,omitempty"`     // Has advanced echo processing
-	NoiseFilter     *bool    `json:"noise_filter,omitempty"`      // Has built-in noise filtering
+	// Visual settings
+	VisualStyle  string `json:"visual_style"`
+	ScanMode     string `json:"scan_mode"`
+	ClientTickHz int    `json:"client_tick_hz"`
+
+	// Detection limits
+	SeeMaxRarity     string `json:"see_max_rarity"`
+	CollectMaxRarity string `json:"collect_max_rarity"`
 }
 
 // ScanRequest - request na skenovanie

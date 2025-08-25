@@ -3,6 +3,7 @@ package database
 import (
 	"geoanomaly/internal/common"
 	"geoanomaly/internal/menu"
+	"geoanomaly/internal/scanner"
 
 	"gorm.io/gorm"
 )
@@ -28,6 +29,12 @@ func AutoMigrate(db *gorm.DB) error {
 		&menu.UserPurchase{},
 		&menu.EssencePackage{},
 		&menu.UserEssencePurchase{},
+		// Scanner models
+		&scanner.ScannerCatalog{},
+		&scanner.ModuleCatalog{},
+		&scanner.PowerCellCatalog{},
+		&scanner.ScannerInstance{},
+		&scanner.ScannerModule{},
 	)
 
 	if err != nil {
@@ -46,6 +53,11 @@ func AutoMigrate(db *gorm.DB) error {
 
 	// ✅ PRIDANÉ: Create menu-specific indexes
 	if err := createMenuIndexes(db); err != nil {
+		return err
+	}
+
+	// ✅ PRIDANÉ: Create scanner-specific indexes
+	if err := createScannerIndexes(db); err != nil {
 		return err
 	}
 
@@ -186,6 +198,51 @@ func createMenuIndexes(db *gorm.DB) error {
 	if err := db.Exec(`
 		CREATE INDEX IF NOT EXISTS idx_user_essence_purchases_user 
 		ON user_essence_purchases (user_id, created_at DESC)
+	`).Error; err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// ✅ PRIDANÉ: Scanner-specific database indexes
+func createScannerIndexes(db *gorm.DB) error {
+	// Unique index for scanner_catalog.code
+	if err := db.Exec(`
+		CREATE UNIQUE INDEX IF NOT EXISTS idx_scanner_catalog_code 
+		ON scanner_catalog (code)
+	`).Error; err != nil {
+		return err
+	}
+
+	// Unique index for module_catalog.code
+	if err := db.Exec(`
+		CREATE UNIQUE INDEX IF NOT EXISTS idx_module_catalog_code 
+		ON module_catalog (code)
+	`).Error; err != nil {
+		return err
+	}
+
+	// Index for scanner_instances.owner_id
+	if err := db.Exec(`
+		CREATE INDEX IF NOT EXISTS idx_scanner_instances_owner_id 
+		ON scanner_instances (owner_id, is_active)
+	`).Error; err != nil {
+		return err
+	}
+
+	// GIN index for scanner_catalog.caps_json
+	if err := db.Exec(`
+		CREATE INDEX IF NOT EXISTS idx_scanner_catalog_caps_gin 
+		ON scanner_catalog USING GIN (caps_json jsonb_path_ops)
+	`).Error; err != nil {
+		return err
+	}
+
+	// Index for scanner_modules by instance
+	if err := db.Exec(`
+		CREATE INDEX IF NOT EXISTS idx_scanner_modules_instance 
+		ON scanner_modules (instance_id, slot_index)
 	`).Error; err != nil {
 		return err
 	}

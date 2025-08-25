@@ -8,14 +8,16 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 type Handler struct {
 	service *Service
+	db      *gorm.DB
 }
 
-func NewHandler(service *Service) *Handler {
-	return &Handler{service: service}
+func NewHandler(service *Service, db *gorm.DB) *Handler {
+	return &Handler{service: service, db: db}
 }
 
 // GetScannerInstance - vráti scanner inštanciu hráča
@@ -119,21 +121,57 @@ func (h *Handler) GetScannerStats(c *gin.Context) {
 	})
 }
 
-// GetScannerCatalog - vráti katalóg scannerov (admin endpoint)
+// GetScannerCatalog - vráti katalóg scannerov
 func (h *Handler) GetScannerCatalog(c *gin.Context) {
-	// TODO: Implement catalog endpoint
+	var scanners []ScannerCatalog
+
+	if err := h.db.Find(&scanners).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to load scanner catalog"})
+		return
+	}
+
 	c.JSON(http.StatusOK, gin.H{
-		"success": true,
-		"message": "Scanner catalog endpoint - to be implemented",
+		"success":  true,
+		"scanners": scanners,
 	})
 }
 
-// GetModuleCatalog - vráti katalóg modulov (admin endpoint)
-func (h *Handler) GetModuleCatalog(c *gin.Context) {
-	// TODO: Implement module catalog endpoint
+// GetScannerByCode - vráti scanner podľa kódu
+func (h *Handler) GetScannerByCode(c *gin.Context) {
+	code := c.Param("code")
+	if code == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Scanner code is required"})
+		return
+	}
+
+	scanner, err := h.service.GetScannerByCode(code)
+	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Scanner not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
-		"message": "Module catalog endpoint - to be implemented",
+		"scanner": scanner,
+	})
+}
+
+// GetModuleCatalog - vráti katalóg modulov
+func (h *Handler) GetModuleCatalog(c *gin.Context) {
+	var modules []ModuleCatalog
+
+	if err := h.db.Find(&modules).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to load module catalog"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"modules": modules,
 	})
 }
 
