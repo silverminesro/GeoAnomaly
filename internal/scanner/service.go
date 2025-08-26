@@ -125,17 +125,20 @@ func (s *Service) CalculateScannerStats(instance *ScannerInstance) (*ScannerStat
 		return nil, fmt.Errorf("scanner details not loaded")
 	}
 
+	// Použi fillCapsDefaults pre bezpečné doplnenie hodnôt
+	caps := s.fillCapsDefaults(instance.Scanner)
+
 	stats := &ScannerStats{
-		RangeM:           instance.Scanner.BaseRangeM,
-		FovDeg:           instance.Scanner.BaseFovDeg,
-		ServerPollHz:     instance.Scanner.CapsJSON.ScanConfig.ServerPollHz,
-		LockOnThreshold:  5.0, // Základný lock-on threshold
-		EnergyCap:        100, // Základná energia
-		VisualStyle:      instance.Scanner.CapsJSON.Visual.Style,
-		ScanMode:         instance.Scanner.CapsJSON.ScanConfig.Mode,
-		ClientTickHz:     instance.Scanner.CapsJSON.ScanConfig.ClientTickHz,
-		SeeMaxRarity:     instance.Scanner.CapsJSON.Limits.SeeMaxRarity,
-		CollectMaxRarity: instance.Scanner.CapsJSON.Limits.CollectMaxRarity,
+		RangeM:           caps.Limits.RangeM,
+		FovDeg:           caps.Limits.FovDeg,
+		ServerPollHz:     caps.ScanConfig.ServerPollHz,
+		LockOnThreshold:  float64(caps.ScanConfig.LockOn.AngleDeg), // Použi angle_deg ako threshold
+		EnergyCap:        100,                                      // Základná energia
+		VisualStyle:      caps.Visual.Style,
+		ScanMode:         caps.ScanConfig.Mode,
+		ClientTickHz:     caps.ScanConfig.ClientTickHz,
+		SeeMaxRarity:     caps.Limits.SeeMaxRarity,
+		CollectMaxRarity: caps.Limits.CollectMaxRarity,
 	}
 
 	// Aplikuj moduly
@@ -146,6 +149,43 @@ func (s *Service) CalculateScannerStats(instance *ScannerInstance) (*ScannerStat
 	}
 
 	return stats, nil
+}
+
+// fillCapsDefaults - bezpečné doplnenie caps z base_* stĺpcov
+func (s *Service) fillCapsDefaults(row *ScannerCatalog) ScannerCaps {
+	caps := row.CapsJSON // už naparsované caps_json (ak prázdne, nuly)
+	if caps.Visual.Style == "" {
+		caps.Visual.Style = "v_hud"
+	}
+	if caps.ScanConfig.ClientTickHz == 0 {
+		caps.ScanConfig.ClientTickHz = 20
+	}
+	if caps.ScanConfig.ServerPollHz == 0 {
+		caps.ScanConfig.ServerPollHz = 1.0
+	}
+	if caps.ScanConfig.LockOn.AngleDeg == 0 {
+		caps.ScanConfig.LockOn.AngleDeg = 5
+	}
+	if caps.ScanConfig.LockOn.RadiusM == 0 {
+		caps.ScanConfig.LockOn.RadiusM = 6
+	}
+	if caps.Limits.RangeM == 0 {
+		caps.Limits.RangeM = row.BaseRangeM
+	}
+	if caps.Limits.FovDeg == 0 {
+		caps.Limits.FovDeg = row.BaseFovDeg
+	}
+	if caps.Limits.SeeMaxRarity == "" {
+		caps.Limits.SeeMaxRarity = row.MaxRarity
+	}
+	if caps.Limits.CollectMaxRarity == "" {
+		caps.Limits.CollectMaxRarity = row.MaxRarity
+	}
+	if !caps.Filters.Artifacts && !caps.Filters.Gear {
+		caps.Filters.Artifacts = true
+		caps.Filters.Gear = true
+	}
+	return caps
 }
 
 // applyModuleEffects - aplikuje účinky modulu na stats
@@ -246,10 +286,13 @@ func (s *Service) getZoneItems(zoneID string) ([]common.Artifact, []common.Gear,
 func (s *Service) filterItemsByScanner(artifacts []common.Artifact, gear []common.Gear, req *ScanRequest, stats *ScannerStats, scanner *ScannerCatalog) []ScanResult {
 	var results []ScanResult
 
+	// Použi fillCapsDefaults pre bezpečné doplnenie hodnôt
+	caps := s.fillCapsDefaults(scanner)
+
 	// Filtruj artefakty
-	if scanner.DetectArtifacts {
+	if caps.Filters.Artifacts {
 		for _, artifact := range artifacts {
-			if s.canDetectItem(artifact.Rarity, scanner.CapsJSON.Limits.SeeMaxRarity) {
+			if s.canDetectItem(artifact.Rarity, caps.Limits.SeeMaxRarity) {
 				result := s.createScanResult(&artifact, req, stats)
 				if result != nil {
 					results = append(results, *result)
@@ -259,10 +302,10 @@ func (s *Service) filterItemsByScanner(artifacts []common.Artifact, gear []commo
 	}
 
 	// Filtruj gear
-	if scanner.DetectGear {
+	if caps.Filters.Gear {
 		for _, g := range gear {
 			// Gear nemá rarity, použijeme "common" ako default
-			if s.canDetectItem("common", scanner.CapsJSON.Limits.SeeMaxRarity) {
+			if s.canDetectItem("common", caps.Limits.SeeMaxRarity) {
 				result := s.createScanResult(&g, req, stats)
 				if result != nil {
 					results = append(results, *result)
