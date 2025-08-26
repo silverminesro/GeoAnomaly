@@ -1,7 +1,6 @@
 package scanner
 
 import (
-	"context"
 	"crypto/aes"
 	"crypto/cipher"
 	cryptorand "crypto/rand"
@@ -206,18 +205,21 @@ func (s *Service) Scan(userID uuid.UUID, req *ScanRequest) (*ScanResponse, error
 	}, nil
 }
 
-// getActiveZoneID - získa ID aktívnej zóny hráča
+// getActiveZoneID - získa ID aktívnej zóny hráča z databázy
 func (s *Service) getActiveZoneID(userID uuid.UUID) (string, error) {
-	// Skontroluj Redis session
-	sessionKey := fmt.Sprintf("user_session:%s", userID.String())
-	zoneID, err := s.redis.Get(context.Background(), sessionKey).Result()
-	if err != nil {
-		if err == redis.Nil {
+	var session common.PlayerSession
+	if err := s.db.Where("user_id = ? AND current_zone IS NOT NULL", userID).First(&session).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
 			return "", fmt.Errorf("no active zone session")
 		}
 		return "", fmt.Errorf("failed to get session: %w", err)
 	}
-	return zoneID, nil
+
+	if session.CurrentZone == nil {
+		return "", fmt.Errorf("no active zone session")
+	}
+
+	return session.CurrentZone.String(), nil
 }
 
 // getZoneItems - načíta artefakty a gear v zóne
