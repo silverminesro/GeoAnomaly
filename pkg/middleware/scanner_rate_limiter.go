@@ -40,7 +40,7 @@ func (srl *ScannerRateLimiter) ScannerRateLimit() gin.HandlerFunc {
 
 		// Získaj scanner inštanciu
 		scannerService := scanner.NewService(srl.db, srl.client)
-		instance, err := scannerService.GetOrCreateScannerInstance(userID.(uuid.UUID))
+		instance, _, err := scannerService.GetOrCreateScannerInstance(userID.(uuid.UUID))
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get scanner instance"})
 			c.Abort()
