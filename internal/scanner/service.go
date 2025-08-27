@@ -1,6 +1,7 @@
 package scanner
 
 import (
+	"context"
 	"crypto/aes"
 	"crypto/cipher"
 	cryptorand "crypto/rand"
@@ -11,9 +12,11 @@ import (
 	"log"
 	"math"
 	"math/rand"
+	"strings"
 	"time"
 
 	"geoanomaly/internal/common"
+	"geoanomaly/internal/loadout"
 
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
@@ -21,12 +24,18 @@ import (
 )
 
 type Service struct {
-	db    *gorm.DB
-	redis *redis.Client
+	db            *gorm.DB
+	redis         *redis.Client
+	loadoutService *loadout.Service
 }
 
 func NewService(db *gorm.DB, redisClient *redis.Client) *Service {
-	return &Service{db: db, redis: redisClient}
+	loadoutService := loadout.NewService(db)
+	return &Service{
+		db:            db, 
+		redis:         redisClient,
+		loadoutService: loadoutService,
+	}
 }
 
 // GetScannerByCode - načíta scanner z katalógu podľa kódu
@@ -50,43 +59,115 @@ func (s *Service) GetBasicScanner() (*ScannerCatalog, error) {
 	return s.GetScannerByCode("echovane_mk0")
 }
 
-// GetOrCreateScannerInstance - vráti alebo vytvorí scanner inštanciu pre hráča
-func (s *Service) GetOrCreateScannerInstance(userID uuid.UUID) (*ScannerInstance, error) {
-	var instance ScannerInstance
+// resolveScannerCodeFromLoadout - helper: hráčov equipnutý scanner -> kód do scanner_catalog
+func (s *Service) resolveScannerCodeFromLoadout(ctx context.Context, userID uuid.UUID) (string, error) {
+	// načítame celý loadout
+	lo, err := s.loadoutService.GetUserLoadout(userID)
+	if err != nil {
+		return "", err
+	}
 
-	// Skús nájsť existujúcu inštanciu - explicitne vyber len základné polia
+	// nič v slote 'scanner' => default
+	slot, ok := lo["scanner"]
+	if !ok || slot == nil || slot.ItemID == uuid.Nil {
+		return "echovane_mk0", nil // bezpečný fallback
+	}
+
+	// properties skeneru z loadoutu – zvyknú obsahovať "name" a/alebo "model" a často aj "market_item_id"
+	name := ""
+	model := ""
+	
+	if slot.Properties != nil {
+		if nameVal, exists := slot.Properties["name"]; exists {
+			if nameStr, ok := nameVal.(string); ok {
+				name = strings.ToLower(strings.TrimSpace(nameStr))
+			}
+		}
+		if modelVal, exists := slot.Properties["model"]; exists {
+			if modelStr, ok := modelVal.(string); ok {
+				model = strings.ToLower(strings.TrimSpace(modelStr))
+			}
+		}
+	}
+
+	// Dočasná mapka názov→kód (kým nebude priamy market ID mapping)
+	switch {
+	case strings.Contains(name, "vesta scout") || strings.Contains(model, "vesta"):
+		return "vesta_scout_50", nil
+	case strings.Contains(name, "radian wide") || strings.Contains(model, "radian"):
+		return "radian_wide_70", nil
+	case strings.Contains(name, "aurora arc") || strings.Contains(model, "aurora"):
+		return "aurora_arc_90", nil
+	case strings.Contains(name, "omnisphere") || strings.Contains(model, "omnisphere"):
+		return "omnisphere_360", nil
+	case strings.Contains(name, "chemvisor") || strings.Contains(model, "chemvisor"):
+		return "chemvisor_mk1", nil
+	default:
+		return "echovane_mk0", nil
+	}
+}
+
+
+
+// GetOrCreateScannerInstance - vráti alebo vytvorí scanner inštanciu pre hráča
+func (s *Service) GetOrCreateScannerInstance(userID uuid.UUID) (*ScannerInstance, *ScannerCatalog, error) {
+	ctx := context.Background()
+	
+	// 1) zisti pracujúci kod zo slotu scanner
+	code, err := s.resolveScannerCodeFromLoadout(ctx, userID)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// 2) nájdi/ulož instanciu hráča s týmto kódom
+	var instance ScannerInstance
 	if err := s.db.Select("id, owner_id, scanner_code, energy_cap, power_cell_code, power_cell_started_at, power_cell_minutes_left, is_active, created_at, updated_at").
 		Where("owner_id = ? AND is_active = true", userID).First(&instance).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
-			// Vytvor novú inštanciu s základným scannerom
-			basicScanner, err := s.GetBasicScanner()
-			if err != nil {
-				return nil, fmt.Errorf("failed to get basic scanner: %w", err)
-			}
-
+			// Vytvor novú inštanciu s loadout scannerom
 			instance = ScannerInstance{
 				ID:          uuid.New(),
 				OwnerID:     userID,
-				ScannerCode: basicScanner.Code,
+				ScannerCode: code,
 				IsActive:    true,
 				CreatedAt:   time.Now(),
 				UpdatedAt:   time.Now(),
 			}
 
 			if err := s.db.Create(&instance).Error; err != nil {
-				return nil, fmt.Errorf("failed to create scanner instance: %w", err)
+				return nil, nil, fmt.Errorf("failed to create scanner instance: %w", err)
 			}
+			
+			log.Printf("✅ Created scanner instance with loadout scanner: %s for user %s", code, userID)
 		} else {
-			return nil, fmt.Errorf("failed to query scanner instance: %w", err)
+			return nil, nil, fmt.Errorf("failed to query scanner instance: %w", err)
 		}
+	} else {
+		// Aktualizuj existujúcu inštanciu, ak sa scanner zmenil
+		if instance.ScannerCode != code {
+			instance.ScannerCode = code
+			instance.UpdatedAt = time.Now()
+
+			if err := s.db.Save(&instance).Error; err != nil {
+				return nil, nil, fmt.Errorf("failed to update scanner instance: %w", err)
+			}
+			
+			log.Printf("✅ Updated scanner instance from %s to %s for user %s", instance.ScannerCode, code, userID)
+		}
+	}
+
+	// 3) načítaj katalógové schopnosti
+	cat, err := s.GetScannerByCode(code)
+	if err != nil {
+		return nil, nil, err
 	}
 
 	// Načítaj scanner detaily
 	if err := s.loadScannerDetails(&instance); err != nil {
-		return nil, fmt.Errorf("failed to load scanner details: %w", err)
+		return nil, nil, fmt.Errorf("failed to load scanner details: %w", err)
 	}
 
-	return &instance, nil
+	return &instance, cat, nil
 }
 
 // loadScannerDetails - načíta scanner catalog a moduly
@@ -218,7 +299,7 @@ func (s *Service) Scan(userID uuid.UUID, req *ScanRequest) (*ScanResponse, error
 	}
 
 	// Načítaj scanner inštanciu
-	instance, err := s.GetOrCreateScannerInstance(userID)
+	instance, _, err := s.GetOrCreateScannerInstance(userID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get scanner instance: %w", err)
 	}

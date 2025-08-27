@@ -34,7 +34,7 @@ func (h *Handler) GetScannerInstance(c *gin.Context) {
 		return
 	}
 
-	instance, err := h.service.GetOrCreateScannerInstance(userUUID)
+	instance, _, err := h.service.GetOrCreateScannerInstance(userUUID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -103,7 +103,7 @@ func (h *Handler) GetScannerStats(c *gin.Context) {
 		return
 	}
 
-	instance, err := h.service.GetOrCreateScannerInstance(userUUID)
+	instance, _, err := h.service.GetOrCreateScannerInstance(userUUID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
