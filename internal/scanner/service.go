@@ -1,7 +1,6 @@
 package scanner
 
 import (
-	"context"
 	"crypto/aes"
 	"crypto/cipher"
 	cryptorand "crypto/rand"
@@ -24,16 +23,16 @@ import (
 )
 
 type Service struct {
-	db            *gorm.DB
-	redis         *redis.Client
+	db             *gorm.DB
+	redis          *redis.Client
 	loadoutService *loadout.Service
 }
 
 func NewService(db *gorm.DB, redisClient *redis.Client) *Service {
 	loadoutService := loadout.NewService(db)
 	return &Service{
-		db:            db, 
-		redis:         redisClient,
+		db:             db,
+		redis:          redisClient,
 		loadoutService: loadoutService,
 	}
 }
@@ -60,7 +59,7 @@ func (s *Service) GetBasicScanner() (*ScannerCatalog, error) {
 }
 
 // resolveScannerCodeFromLoadout - helper: hráčov equipnutý scanner -> kód do scanner_catalog
-func (s *Service) resolveScannerCodeFromLoadout(ctx context.Context, userID uuid.UUID) (string, error) {
+func (s *Service) resolveScannerCodeFromLoadout(userID uuid.UUID) (string, error) {
 	// načítame celý loadout
 	lo, err := s.loadoutService.GetUserLoadout(userID)
 	if err != nil {
@@ -76,7 +75,7 @@ func (s *Service) resolveScannerCodeFromLoadout(ctx context.Context, userID uuid
 	// properties skeneru z loadoutu – zvyknú obsahovať "name" a/alebo "model" a často aj "market_item_id"
 	name := ""
 	model := ""
-	
+
 	if slot.Properties != nil {
 		if nameVal, exists := slot.Properties["name"]; exists {
 			if nameStr, ok := nameVal.(string); ok {
@@ -107,14 +106,10 @@ func (s *Service) resolveScannerCodeFromLoadout(ctx context.Context, userID uuid
 	}
 }
 
-
-
 // GetOrCreateScannerInstance - vráti alebo vytvorí scanner inštanciu pre hráča
 func (s *Service) GetOrCreateScannerInstance(userID uuid.UUID) (*ScannerInstance, *ScannerCatalog, error) {
-	ctx := context.Background()
-	
 	// 1) zisti pracujúci kod zo slotu scanner
-	code, err := s.resolveScannerCodeFromLoadout(ctx, userID)
+	code, err := s.resolveScannerCodeFromLoadout(userID)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -137,7 +132,7 @@ func (s *Service) GetOrCreateScannerInstance(userID uuid.UUID) (*ScannerInstance
 			if err := s.db.Create(&instance).Error; err != nil {
 				return nil, nil, fmt.Errorf("failed to create scanner instance: %w", err)
 			}
-			
+
 			log.Printf("✅ Created scanner instance with loadout scanner: %s for user %s", code, userID)
 		} else {
 			return nil, nil, fmt.Errorf("failed to query scanner instance: %w", err)
@@ -151,7 +146,7 @@ func (s *Service) GetOrCreateScannerInstance(userID uuid.UUID) (*ScannerInstance
 			if err := s.db.Save(&instance).Error; err != nil {
 				return nil, nil, fmt.Errorf("failed to update scanner instance: %w", err)
 			}
-			
+
 			log.Printf("✅ Updated scanner instance from %s to %s for user %s", instance.ScannerCode, code, userID)
 		}
 	}
