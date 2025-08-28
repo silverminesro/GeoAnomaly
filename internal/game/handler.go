@@ -635,84 +635,128 @@ func (h *Handler) ScanZone(c *gin.Context) {
 	})
 }
 
-// ✅ ENHANCED CollectItem - zber artefakt/gear s XP systémom + zone activity tracking
+// ✅ ENHANCED CollectItem - zber artefakt/gear s XP systémom + zone activity tracking + distance validation
 func (h *Handler) CollectItem(c *gin.Context) {
-	userID, exists := c.Get("user_id")
-	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not found"})
-		return
-	}
-
+	userID := c.MustGet("user_id").(uuid.UUID)
 	zoneID := c.Param("id")
-	if zoneID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Zone ID required"})
-		return
-	}
 
-	type CollectRequest struct {
-		ItemType string `json:"item_type" binding:"required"` // artifact, gear
+	var req struct {
+		ItemType string `json:"item_type" binding:"required"` // "artifact" | "gear"
 		ItemID   string `json:"item_id" binding:"required"`
 	}
-
-	var req CollectRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "code": "bad_request", "error": "Invalid body"})
 		return
 	}
 
-	// Get user
+	// 1) Session + in-zone validácia
+	var session common.PlayerSession
+	if err := h.db.Where("user_id = ? AND current_zone = ?", userID, zoneID).First(&session).Error; err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "code": "not_in_zone", "error": "You must be inside this zone to collect"})
+		return
+	}
+
+	// 2) Načítaj item + over zhodu zóny
+	var (
+		itemLat, itemLng float64
+		itemZoneID       uuid.UUID
+		itemRarity       string
+		itemName         string
+	)
+
+	switch req.ItemType {
+	case "artifact":
+		var a common.Artifact
+		if err := h.db.First(&a, "id = ?", req.ItemID).Error; err != nil {
+			c.JSON(http.StatusNotFound, gin.H{"success": false, "code": "not_found", "error": "Artifact not found"})
+			return
+		}
+		if a.DeletedAt != nil || !a.IsActive {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "code": "inactive", "error": "Artifact is no longer available"})
+			return
+		}
+		itemZoneID = a.ZoneID
+		itemLat = a.Location.Latitude
+		itemLng = a.Location.Longitude
+		itemRarity = a.Rarity
+		itemName = a.Name
+
+	case "gear":
+		var g common.Gear
+		if err := h.db.First(&g, "id = ?", req.ItemID).Error; err != nil {
+			c.JSON(http.StatusNotFound, gin.H{"success": false, "code": "not_found", "error": "Gear not found"})
+			return
+		}
+		if g.DeletedAt != nil || !g.IsActive {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "code": "inactive", "error": "Gear is no longer available"})
+			return
+		}
+		itemZoneID = g.ZoneID
+		itemLat = g.Location.Latitude
+		itemLng = g.Location.Longitude
+		// gear nemá rarity – nechaj prázdne; rarity limit sa bude hodnotiť interným pravidlom pre gear (common)
+		itemRarity = "common"
+		itemName = g.Name
+
+	default:
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "code": "bad_request", "error": "Invalid item_type"})
+		return
+	}
+
+	if itemZoneID.String() != zoneID {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "code": "wrong_zone", "error": "Item does not belong to this zone"})
+		return
+	}
+
+	// 3) Vzdialenosť hráča od itemu (z poslednej session polohy)
+	playerLat := session.LastLocationLatitude
+	playerLng := session.LastLocationLongitude
+	dist := CalculateDistance(playerLat, playerLng, itemLat, itemLng)
+
+	if dist > MaxCollectRadius {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success":              false,
+			"code":                 "too_far",
+			"error":                "Move closer to collect",
+			"distance_m":           math.Round(dist*10) / 10,
+			"max_collect_radius_m": MaxCollectRadius,
+		})
+		return
+	}
+
+	// 4) Get user for tier check and stats update
 	var user common.User
 	if err := h.db.First(&user, "id = ?", userID).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
+		c.JSON(http.StatusNotFound, gin.H{"success": false, "code": "user_not_found", "error": "User not found"})
+		return
+	}
+
+	// 5) Tier + biome + level (existujúca logika)
+	canByTier, tierMsg := h.CheckUserCanCollectItem(user.Tier, req.ItemType, req.ItemID)
+	if !canByTier {
+		c.JSON(http.StatusForbidden, gin.H{"success": false, "code": "tier_blocked", "error": tierMsg})
+		return
+	}
+
+	// 6) Scanner rarity limit (existujúca logika – už ju máš)
+	canByScanner, scannerMsg := h.CheckScannerCanCollectItem(userID, req.ItemType, req.ItemID)
+	if !canByScanner {
+		c.JSON(http.StatusForbidden, gin.H{"success": false, "code": "rarity_blocked", "error": scannerMsg})
 		return
 	}
 
 	// Get zone info for biome context
 	var zone common.Zone
 	if err := h.db.First(&zone, "id = ? AND is_active = true", zoneID).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Zone not found"})
+		c.JSON(http.StatusNotFound, gin.H{"success": false, "code": "zone_not_found", "error": "Zone not found"})
 		return
 	}
 
 	// Update zone activity on collection
 	h.updateZoneActivity(zone.ID)
 
-	// Check if player is in zone
-	var session common.PlayerSession
-	if err := h.db.Where("user_id = ? AND current_zone = ?", userID, zoneID).First(&session).Error; err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error":   "Not in zone",
-			"message": "You must be in the zone to collect items",
-		})
-		return
-	}
-
-	// Check if user can collect this item (tier validation)
-	canCollect, reason := h.CheckUserCanCollectItem(user.Tier, req.ItemType, req.ItemID)
-	if !canCollect {
-		c.JSON(http.StatusForbidden, gin.H{
-			"error":     "Cannot collect item",
-			"reason":    reason,
-			"your_tier": user.Tier,
-			"item_type": req.ItemType,
-		})
-		return
-	}
-
-	// Check scanner collection limits
-	scannerCanCollect, scannerReason := h.CheckScannerCanCollectItem(user.ID, req.ItemType, req.ItemID)
-	if !scannerCanCollect {
-		c.JSON(http.StatusForbidden, gin.H{
-			"error":     "Scanner cannot collect item",
-			"reason":    scannerReason,
-			"item_type": req.ItemType,
-		})
-		return
-	}
-
 	// Process collection based on item type
 	var collectedItem interface{}
-	var itemName string
 	var biome string
 	var xpResult *xp.XPResult
 
@@ -720,7 +764,7 @@ func (h *Handler) CollectItem(c *gin.Context) {
 	case "artifact":
 		var artifact common.Artifact
 		if err := h.db.First(&artifact, "id = ? AND zone_id = ? AND is_active = true", req.ItemID, zoneID).Error; err != nil {
-			c.JSON(http.StatusNotFound, gin.H{"error": "Artifact not found"})
+			c.JSON(http.StatusNotFound, gin.H{"success": false, "code": "not_found", "error": "Artifact not found"})
 			return
 		}
 
@@ -757,7 +801,6 @@ func (h *Handler) CollectItem(c *gin.Context) {
 		}
 
 		collectedItem = artifact
-		itemName = artifact.Name
 		biome = artifact.Biome
 
 		// Update user stats
@@ -766,7 +809,7 @@ func (h *Handler) CollectItem(c *gin.Context) {
 	case "gear":
 		var gear common.Gear
 		if err := h.db.First(&gear, "id = ? AND zone_id = ? AND is_active = true", req.ItemID, zoneID).Error; err != nil {
-			c.JSON(http.StatusNotFound, gin.H{"error": "Gear not found"})
+			c.JSON(http.StatusNotFound, gin.H{"success": false, "code": "not_found", "error": "Gear not found"})
 			return
 		}
 
@@ -784,7 +827,7 @@ func (h *Handler) CollectItem(c *gin.Context) {
 			"collected_at":   time.Now().Unix(),
 			"collected_from": zoneID,
 			"zone_name":      zone.Name,
-			"zone_biome":     zone.Biome,
+			"zone_biome":     gear.Biome,
 			"danger_level":   zone.DangerLevel,
 			"acquired_at":    time.Now().Format(time.RFC3339),
 		}
@@ -850,14 +893,13 @@ func (h *Handler) CollectItem(c *gin.Context) {
 		h.db.Create(&inventoryItem)
 
 		collectedItem = inventoryItem
-		itemName = gear.Name
 		biome = gear.Biome
 
 		// Update user stats
 		h.db.Model(&user).Update("total_gear", gorm.Expr("total_gear + ?", 1))
 
 	default:
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid item type"})
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "code": "bad_request", "error": "Invalid item type"})
 		return
 	}
 
@@ -867,7 +909,15 @@ func (h *Handler) CollectItem(c *gin.Context) {
 
 	// Enhanced response s XP systémom
 	response := gin.H{
-		"message":      "Item collected successfully",
+		"success": true,
+		"message": "Collected successfully",
+		"collected_item": gin.H{
+			"id":     req.ItemID,
+			"type":   req.ItemType,
+			"name":   itemName,
+			"rarity": itemRarity,
+		},
+		"distance_m":   math.Round(dist*10) / 10,
 		"item":         collectedItem,
 		"item_name":    itemName,
 		"item_type":    req.ItemType,
