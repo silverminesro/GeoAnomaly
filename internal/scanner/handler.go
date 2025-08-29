@@ -5,6 +5,9 @@ import (
 	"math"
 	"net/http"
 	"strings"
+	"time"
+
+	"geoanomaly/internal/common"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -66,6 +69,9 @@ func (h *Handler) Scan(c *gin.Context) {
 		return
 	}
 
+	// ✅ NOVÉ: Aktualizuj polohu v player_sessions
+	h.updatePlayerLocation(userUUID, req.Latitude, req.Longitude)
+
 	// Validácia heading hodnoty - ak je NaN alebo Infinity, použij 0.0
 	if math.IsNaN(req.Heading) || math.IsInf(req.Heading, 0) {
 		req.Heading = 0.0
@@ -87,6 +93,26 @@ func (h *Handler) Scan(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, response)
+}
+
+// ✅ NOVÉ: updatePlayerLocation - aktualizuje polohu v player_sessions
+func (h *Handler) updatePlayerLocation(userID uuid.UUID, latitude, longitude float64) {
+	// Aktualizuj player session s novou polohou
+	session := common.PlayerSession{
+		UserID:                userID,
+		LastSeen:              time.Now(),
+		IsOnline:              true,
+		LastLocationLatitude:  latitude,
+		LastLocationLongitude: longitude,
+		LastLocationTimestamp: time.Now(),
+	}
+
+	// Upsert player session
+	if err := h.db.Where("user_id = ?", userID).Assign(session).FirstOrCreate(&session).Error; err != nil {
+		log.Printf("❌ Failed to update player location for user %s: %v", userID, err)
+	} else {
+		log.Printf("📍 Player location updated for user %s: [%.6f, %.6f]", userID, latitude, longitude)
+	}
 }
 
 // GetScannerStats - vráti stats scanner
