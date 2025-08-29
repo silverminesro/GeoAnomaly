@@ -24,7 +24,7 @@ const (
 const (
 	EarthRadiusKm      = 6371.0
 	MaxScanRadius      = 100.0
-	MaxCollectRadius   = 50.0
+	MaxCollectRadius   = 1000.0 // Zvýšené z 50.0 na 1000.0 metrov
 	AreaScanRadius     = 7000.0 // 7km - visibility radius
 	MaxSpawnRadius     = 2000.0 // 2km - maximum spawning radius (NEW)
 	AreaScanCooldown   = 1
