@@ -92,10 +92,12 @@ type LockOnSettings struct {
 
 // DetectionLimits - limity detekcie
 type DetectionLimits struct {
-	RangeM           int    `json:"range_m"`            // Dosah v metroch
-	FovDeg           int    `json:"fov_deg"`            // Field of view v stupňoch
-	SeeMaxRarity     string `json:"see_max_rarity"`     // Najvyššia rarity ktorú môže vidieť
-	CollectMaxRarity string `json:"collect_max_rarity"` // Najvyššia rarity ktorú môže získať
+	RangeM           int    `json:"range_m"`                      // Dosah v metroch
+	FovDeg           int    `json:"fov_deg"`                      // Field of view v stupňoch
+	SeeMaxRarity     string `json:"see_max_rarity"`               // Najvyššia rarity ktorú môže vidieť
+	CollectMaxRarity string `json:"collect_max_rarity"`           // Najvyššia rarity ktorú môže získať
+	SeeMinRarity     string `json:"see_min_rarity,omitempty"`     // Najnižšia rarity ktorú môže vidieť (voliteľné)
+	CollectMinRarity string `json:"collect_min_rarity,omitempty"` // Najnižšia rarity ktorú môže získať (voliteľné)
 }
 
 // ItemFilters - filtre pre typy itemov
@@ -256,6 +258,8 @@ type ScannerStats struct {
 	// Detection limits
 	SeeMaxRarity     string `json:"see_max_rarity"`
 	CollectMaxRarity string `json:"collect_max_rarity"`
+	SeeMinRarity     string `json:"see_min_rarity,omitempty"`
+	CollectMinRarity string `json:"collect_min_rarity,omitempty"`
 }
 
 // ScanRequest - request na skenovanie

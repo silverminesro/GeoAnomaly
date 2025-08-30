@@ -215,6 +215,8 @@ func (s *Service) CalculateScannerStats(instance *ScannerInstance) (*ScannerStat
 		ClientTickHz:     caps.ScanConfig.ClientTickHz,
 		SeeMaxRarity:     caps.Limits.SeeMaxRarity,
 		CollectMaxRarity: caps.Limits.CollectMaxRarity,
+		SeeMinRarity:     caps.Limits.SeeMinRarity,
+		CollectMinRarity: caps.Limits.CollectMinRarity,
 	}
 
 	// Aplikuj moduly
@@ -256,6 +258,12 @@ func (s *Service) fillCapsDefaults(row *ScannerCatalog) ScannerCaps {
 	}
 	if caps.Limits.CollectMaxRarity == "" {
 		caps.Limits.CollectMaxRarity = row.MaxRarity
+	}
+	if caps.Limits.SeeMinRarity == "" {
+		caps.Limits.SeeMinRarity = "common" // Default: vidí všetko od common
+	}
+	if caps.Limits.CollectMinRarity == "" {
+		caps.Limits.CollectMinRarity = "common" // Default: collectuje všetko od common
 	}
 	if !caps.Filters.Artifacts && !caps.Filters.Gear {
 		caps.Filters.Artifacts = true
@@ -368,7 +376,7 @@ func (s *Service) filterItemsByScanner(artifacts []common.Artifact, gear []commo
 	// Filtruj artefakty
 	if caps.Filters.Artifacts {
 		for _, artifact := range artifacts {
-			if s.canDetectItem(artifact.Rarity, caps.Limits.SeeMaxRarity) {
+			if s.canDetectItem(artifact.Rarity, caps.Limits.SeeMaxRarity, caps.Limits.SeeMinRarity) {
 				result := s.createScanResult(&artifact, req, stats)
 				if result != nil {
 					results = append(results, *result)
@@ -381,7 +389,7 @@ func (s *Service) filterItemsByScanner(artifacts []common.Artifact, gear []commo
 	if caps.Filters.Gear {
 		for _, g := range gear {
 			// Gear nemá rarity, použijeme "common" ako default
-			if s.canDetectItem("common", caps.Limits.SeeMaxRarity) {
+			if s.canDetectItem("common", caps.Limits.SeeMaxRarity, caps.Limits.SeeMinRarity) {
 				result := s.createScanResult(&g, req, stats)
 				if result != nil {
 					results = append(results, *result)
@@ -394,7 +402,7 @@ func (s *Service) filterItemsByScanner(artifacts []common.Artifact, gear []commo
 }
 
 // canDetectItem - skontroluje či scanner môže detekovať item danej rarity
-func (s *Service) canDetectItem(itemRarity, maxRarity string) bool {
+func (s *Service) canDetectItem(itemRarity, maxRarity, minRarity string) bool {
 	rarityLevels := map[string]int{
 		"common":    1,
 		"uncommon":  2,
@@ -405,9 +413,15 @@ func (s *Service) canDetectItem(itemRarity, maxRarity string) bool {
 
 	itemLevel, itemExists := rarityLevels[itemRarity]
 	maxLevel, maxExists := rarityLevels[maxRarity]
+	minLevel, minExists := rarityLevels[minRarity]
 
 	if !itemExists || !maxExists {
 		return false
+	}
+
+	// Ak je nastavená min_rarity, skontroluj aj ju
+	if minRarity != "" && minExists {
+		return itemLevel >= minLevel && itemLevel <= maxLevel
 	}
 
 	return itemLevel <= maxLevel
