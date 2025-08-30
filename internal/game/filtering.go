@@ -144,14 +144,23 @@ func (h *Handler) CheckScannerCanCollectItem(userID uuid.UUID, itemType, itemID 
 	}
 
 	itemLevel, itemExists := rarityLevels[itemRarity]
-	collectLevel, collectExists := rarityLevels[scannerCatalog.CapsJSON.Limits.CollectMaxRarity]
+	collectMaxLevel, collectMaxExists := rarityLevels[scannerCatalog.CapsJSON.Limits.CollectMaxRarity]
+	collectMinLevel, collectMinExists := rarityLevels[scannerCatalog.CapsJSON.Limits.CollectMinRarity]
 
-	if !itemExists || !collectExists {
+	if !itemExists || !collectMaxExists {
 		return false, "Invalid rarity configuration"
 	}
 
-	if itemLevel > collectLevel {
+	// Check max rarity limit
+	if itemLevel > collectMaxLevel {
 		return false, fmt.Sprintf("Scanner can only collect up to %s rarity", scannerCatalog.CapsJSON.Limits.CollectMaxRarity)
+	}
+
+	// Check min rarity limit (if set)
+	if scannerCatalog.CapsJSON.Limits.CollectMinRarity != "" && collectMinExists {
+		if itemLevel < collectMinLevel {
+			return false, fmt.Sprintf("Scanner can only collect from %s rarity and above", scannerCatalog.CapsJSON.Limits.CollectMinRarity)
+		}
 	}
 
 	return true, ""
