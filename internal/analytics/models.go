@@ -1,6 +1,8 @@
 package analytics
 
 import (
+	"database/sql/driver"
+	"encoding/json"
 	"time"
 
 	"github.com/google/uuid"
@@ -16,6 +18,35 @@ type BaseModel struct {
 
 // JSONB type for PostgreSQL
 type JSONB map[string]interface{}
+
+// Scan implements the sql.Scanner interface for JSONB
+func (j *JSONB) Scan(value interface{}) error {
+	if value == nil {
+		*j = make(JSONB)
+		return nil
+	}
+
+	bytes, ok := value.([]byte)
+	if !ok {
+		return nil
+	}
+
+	return json.Unmarshal(bytes, j)
+}
+
+// Value implements the driver.Valuer interface for JSONB
+func (j JSONB) Value() (driver.Value, error) {
+	if j == nil {
+		return "{}", nil
+	}
+
+	bytes, err := json.Marshal(j)
+	if err != nil {
+		return nil, err
+	}
+
+	return string(bytes), nil
+}
 
 // ModuleCatalog model - migrovaný do analytics.module_catalog
 type ModuleCatalog struct {
