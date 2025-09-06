@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"time"
 
@@ -22,9 +23,31 @@ import (
 	"geoanomaly/pkg/middleware"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
 )
+
+// scannerServiceAdapter implements middleware.ScannerService interface
+type scannerServiceAdapter struct {
+	service *scanner.Service
+}
+
+func (a *scannerServiceAdapter) GetOrCreateScannerInstance(userID uuid.UUID) (interface{}, bool, error) {
+	instance, catalog, err := a.service.GetOrCreateScannerInstance(userID)
+	if err != nil {
+		return nil, false, err
+	}
+	return instance, catalog != nil, nil
+}
+
+func (a *scannerServiceAdapter) CalculateScannerStats(instance interface{}) (interface{}, error) {
+	scannerInstance, ok := instance.(*scanner.ScannerInstance)
+	if !ok {
+		return nil, fmt.Errorf("invalid scanner instance type")
+	}
+	return a.service.CalculateScannerStats(scannerInstance)
+}
 
 func setupRoutes(db *gorm.DB, redisClient *redis.Client, r2Client *media.R2Client) *gin.Engine {
 	gin.SetMode(gin.ReleaseMode)
@@ -70,7 +93,9 @@ func setupRoutes(db *gorm.DB, redisClient *redis.Client, r2Client *media.R2Clien
 	// Initialize scanner rate limiter
 	var scannerRateLimiter *middleware.ScannerRateLimiter
 	if redisClient != nil {
-		scannerRateLimiter = middleware.NewScannerRateLimiter(redisClient, db)
+		// Create adapter to implement middleware.ScannerService interface
+		scannerServiceAdapter := &scannerServiceAdapter{service: scannerService}
+		scannerRateLimiter = middleware.NewScannerRateLimiter(redisClient, db, scannerServiceAdapter)
 	}
 
 	// Initialize media service and handler
