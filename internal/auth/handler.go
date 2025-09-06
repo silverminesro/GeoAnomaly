@@ -3,7 +3,6 @@ package auth
 import (
 	"context"
 	"fmt"
-	"geoanomaly/internal/common"
 	"geoanomaly/pkg/middleware"
 	"net/http"
 	"time"
@@ -32,8 +31,8 @@ type LoginRequest struct {
 }
 
 type AuthResponse struct {
-	Token string      `json:"token"`
-	User  common.User `json:"user"`
+	Token string `json:"token"`
+	User  User   `json:"user"`
 }
 
 func NewHandler(db *gorm.DB, redis *redis.Client) *Handler {
@@ -54,7 +53,7 @@ func (h *Handler) Register(c *gin.Context) {
 	}
 
 	// Check if user already exists
-	var existingUser common.User
+	var existingUser User
 	if err := h.db.Where("username = ? OR email = ?", req.Username, req.Email).First(&existingUser).Error; err == nil {
 		if existingUser.Username == req.Username {
 			c.JSON(http.StatusConflict, gin.H{"error": "Username already exists"})
@@ -74,8 +73,8 @@ func (h *Handler) Register(c *gin.Context) {
 	}
 
 	// Create user with tier 1 (basic free tier)
-	user := common.User{
-		BaseModel: common.BaseModel{
+	user := User{
+		BaseModel: BaseModel{
 			ID: uuid.New(),
 		},
 		Username:     req.Username,
@@ -122,7 +121,7 @@ func (h *Handler) Login(c *gin.Context) {
 	}
 
 	// Find user by username or email
-	var user common.User
+	var user User
 	if err := h.db.Where("username = ? OR email = ?", req.Username, req.Username).First(&user).Error; err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{
 			"error":   "Invalid credentials",
@@ -187,7 +186,7 @@ func (h *Handler) RefreshToken(c *gin.Context) {
 	// We get fresh data from database instead
 
 	// Verify user still exists and is active
-	var user common.User
+	var user User
 	if err := h.db.Where("id = ? AND is_active = true", userID).First(&user).Error; err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{
 			"error":   "User not found or inactive",
@@ -241,7 +240,7 @@ func (h *Handler) GetProfile(c *gin.Context) {
 		return
 	}
 
-	var user common.User
+	var user User
 	if err := h.db.Where("id = ?", userID).First(&user).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
 		return
@@ -295,7 +294,7 @@ func (h *Handler) ChangePassword(c *gin.Context) {
 	}
 
 	// Get user from database
-	var user common.User
+	var user User
 	if err := h.db.Where("id = ?", userID).First(&user).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
 		return

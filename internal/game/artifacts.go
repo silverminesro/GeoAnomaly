@@ -1,6 +1,6 @@
 package game
 
-import "geoanomaly/internal/common"
+import "geoanomaly/internal/gameplay"
 
 // Artifact display names
 func GetArtifactDisplayName(artifactType string) string {
@@ -201,7 +201,7 @@ func GetArtifactRarity(artifactType string, tier int) string {
 }
 
 // Artifact filtering functions
-func (h *Handler) canCollectArtifact(artifact common.Artifact, userTier int) bool {
+func (h *Handler) canCollectArtifact(artifact gameplay.Artifact, userTier int) bool {
 	switch userTier {
 	case 0, 1:
 		return artifact.Rarity == "common" || artifact.Rarity == "rare"
@@ -249,8 +249,8 @@ func (h *Handler) canAccessBiome(biome string, userTier int) bool {
 	return userTier >= requiredTier
 }
 
-func (h *Handler) filterArtifactsByTier(artifacts []common.Artifact, userTier int) []common.Artifact {
-	var filtered []common.Artifact
+func (h *Handler) filterArtifactsByTier(artifacts []gameplay.Artifact, userTier int) []gameplay.Artifact {
+	var filtered []gameplay.Artifact
 	for _, artifact := range artifacts {
 		// Check tier requirements
 		if !h.canCollectArtifact(artifact, userTier) {

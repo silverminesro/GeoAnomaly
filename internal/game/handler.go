@@ -9,7 +9,8 @@ import (
 	"strconv"
 	"time"
 
-	"geoanomaly/internal/common"
+	"geoanomaly/internal/auth"
+	"geoanomaly/internal/gameplay"
 	"geoanomaly/internal/xp"
 
 	"github.com/gin-gonic/gin"
@@ -41,7 +42,7 @@ func (h *Handler) ScanArea(c *gin.Context) {
 	}
 
 	// Get user
-	var user common.User
+	var user auth.User
 	if err := h.db.First(&user, "id = ?", userID).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
 		return
@@ -62,7 +63,7 @@ func (h *Handler) ScanArea(c *gin.Context) {
 	existingZones := h.getExistingZonesInArea(req.Latitude, req.Longitude, AreaScanRadius)
 
 	// ====== GARANCIA ZÓN PRE NÍZKE TIERY ======
-	newZones := []common.Zone{}
+	newZones := []gameplay.Zone{}
 	zonesInSpawnRadius := h.getExistingZonesInArea(req.Latitude, req.Longitude, MaxSpawnRadius)
 
 	if user.Tier == 0 {
@@ -163,8 +164,8 @@ func (h *Handler) ScanArea(c *gin.Context) {
 }
 
 // ✅ UPDATED: spawnDynamicZones with tier-based distance spawning & minimal distance between zones
-func (h *Handler) spawnDynamicZones(lat, lng float64, playerTier int, count int) []common.Zone {
-	var newZones []common.Zone
+func (h *Handler) spawnDynamicZones(lat, lng float64, playerTier int, count int) []gameplay.Zone {
+	var newZones []gameplay.Zone
 
 	// Získaj všetky existujúce zóny v maximálnom okruhu spawnu (2km)
 	existingZones := h.getExistingZonesInArea(lat, lng, MaxSpawnRadius)
@@ -243,10 +244,10 @@ func (h *Handler) spawnDynamicZones(lat, lng float64, playerTier int, count int)
 		}
 		expiresAt := time.Now().Add(randomTTL)
 
-		zone := common.Zone{
-			BaseModel: common.BaseModel{ID: uuid.New()},
+		zone := gameplay.Zone{
+			BaseModel: gameplay.BaseModel{ID: uuid.New()},
 			Name:      h.generateZoneName(biome),
-			Location: common.Location{
+			Location: gameplay.Location{
 				Latitude:  zoneLat,
 				Longitude: zoneLng,
 				Timestamp: time.Now(),
@@ -263,7 +264,7 @@ func (h *Handler) spawnDynamicZones(lat, lng float64, playerTier int, count int)
 			LastActivity: time.Now(),
 			AutoCleanup:  true,
 
-			Properties: common.JSONB{
+			Properties: gameplay.JSONB{
 				"spawned_by":            "scan_area",
 				"ttl_hours":             randomTTL.Hours(),
 				"biome":                 biome,
@@ -316,7 +317,7 @@ func (h *Handler) GetNearbyZones(c *gin.Context) {
 	}
 
 	// Get user tier
-	var user common.User
+	var user auth.User
 	if err := h.db.First(&user, "id = ?", userID).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
 		return
@@ -357,14 +358,14 @@ func (h *Handler) GetZoneDetails(c *gin.Context) {
 	}
 
 	// Get user
-	var user common.User
+	var user auth.User
 	if err := h.db.First(&user, "id = ?", userID).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
 		return
 	}
 
 	// Get zone
-	var zone common.Zone
+	var zone gameplay.Zone
 	if err := h.db.First(&zone, "id = ? AND is_active = true", zoneID).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Zone not found"})
 		return
@@ -385,8 +386,8 @@ func (h *Handler) GetZoneDetails(c *gin.Context) {
 	details := h.buildZoneDetails(zone, 0, 0, user.Tier)
 
 	// Get all items in zone (filtered by tier)
-	var artifacts []common.Artifact
-	var gear []common.Gear
+	var artifacts []gameplay.Artifact
+	var gear []gameplay.Gear
 	h.db.Where("zone_id = ? AND is_active = true", zone.ID).Find(&artifacts)
 	h.db.Where("zone_id = ? AND is_active = true", zone.ID).Find(&gear)
 
@@ -417,14 +418,14 @@ func (h *Handler) EnterZone(c *gin.Context) {
 	}
 
 	// Get user
-	var user common.User
+	var user auth.User
 	if err := h.db.First(&user, "id = ?", userID).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
 		return
 	}
 
 	// Get zone
-	var zone common.Zone
+	var zone gameplay.Zone
 	if err := h.db.First(&zone, "id = ? AND is_active = true", zoneID).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Zone not found"})
 		return
@@ -445,10 +446,10 @@ func (h *Handler) EnterZone(c *gin.Context) {
 	h.updateZoneActivity(zone.ID)
 
 	// Update player session
-	var session common.PlayerSession
+	var session auth.PlayerSession
 	if err := h.db.Where("user_id = ?", userID).First(&session).Error; err != nil {
 		// Create new session
-		session = common.PlayerSession{
+		session = auth.PlayerSession{
 			UserID:   user.ID,
 			IsOnline: true,
 			LastSeen: time.Now(),
@@ -517,7 +518,7 @@ func (h *Handler) ExitZone(c *gin.Context) {
 	}
 
 	// Get player session
-	var session common.PlayerSession
+	var session auth.PlayerSession
 	if err := h.db.Where("user_id = ?", userID).First(&session).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Player session not found"})
 		return
@@ -531,7 +532,7 @@ func (h *Handler) ExitZone(c *gin.Context) {
 	// Get zone name before clearing
 	var zoneName string = "Unknown Zone"
 	if session.CurrentZone != nil {
-		var zone common.Zone
+		var zone gameplay.Zone
 		if err := h.db.First(&zone, "id = ?", *session.CurrentZone).Error; err == nil {
 			zoneName = zone.Name
 		}
@@ -575,14 +576,14 @@ func (h *Handler) ScanZone(c *gin.Context) {
 	}
 
 	// Get user
-	var user common.User
+	var user auth.User
 	if err := h.db.First(&user, "id = ?", userID).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
 		return
 	}
 
 	// Get zone
-	var zone common.Zone
+	var zone gameplay.Zone
 	if err := h.db.First(&zone, "id = ? AND is_active = true", zoneID).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Zone not found"})
 		return
@@ -599,7 +600,7 @@ func (h *Handler) ScanZone(c *gin.Context) {
 	}
 
 	// Check if player is in zone
-	var session common.PlayerSession
+	var session auth.PlayerSession
 	if err := h.db.Where("user_id = ? AND current_zone = ?", userID, zoneID).First(&session).Error; err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error":   "Not in zone",
@@ -612,8 +613,8 @@ func (h *Handler) ScanZone(c *gin.Context) {
 	h.updateZoneActivity(zone.ID)
 
 	// Get items in zone (filtered by tier)
-	var artifacts []common.Artifact
-	var gear []common.Gear
+	var artifacts []gameplay.Artifact
+	var gear []gameplay.Gear
 
 	h.db.Where("zone_id = ? AND is_active = true", zoneID).Find(&artifacts)
 	h.db.Where("zone_id = ? AND is_active = true", zoneID).Find(&gear)
@@ -650,7 +651,7 @@ func (h *Handler) CollectItem(c *gin.Context) {
 	}
 
 	// 1) Session + in-zone validácia
-	var session common.PlayerSession
+	var session auth.PlayerSession
 	if err := h.db.Where("user_id = ? AND current_zone = ?", userID, zoneID).First(&session).Error; err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"success": false, "code": "not_in_zone", "error": "You must be inside this zone to collect"})
 		return
@@ -666,7 +667,7 @@ func (h *Handler) CollectItem(c *gin.Context) {
 
 	switch req.ItemType {
 	case "artifact":
-		var a common.Artifact
+		var a gameplay.Artifact
 		if err := h.db.First(&a, "id = ?", req.ItemID).Error; err != nil {
 			c.JSON(http.StatusNotFound, gin.H{"success": false, "code": "not_found", "error": "Artifact not found"})
 			return
@@ -682,7 +683,7 @@ func (h *Handler) CollectItem(c *gin.Context) {
 		itemName = a.Name
 
 	case "gear":
-		var g common.Gear
+		var g gameplay.Gear
 		if err := h.db.First(&g, "id = ?", req.ItemID).Error; err != nil {
 			c.JSON(http.StatusNotFound, gin.H{"success": false, "code": "not_found", "error": "Gear not found"})
 			return
@@ -725,7 +726,7 @@ func (h *Handler) CollectItem(c *gin.Context) {
 	}
 
 	// 4) Get user for tier check and stats update
-	var user common.User
+	var user auth.User
 	if err := h.db.First(&user, "id = ?", userID).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"success": false, "code": "user_not_found", "error": "User not found"})
 		return
@@ -746,7 +747,7 @@ func (h *Handler) CollectItem(c *gin.Context) {
 	}
 
 	// Get zone info for biome context
-	var zone common.Zone
+	var zone gameplay.Zone
 	if err := h.db.First(&zone, "id = ? AND is_active = true", zoneID).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"success": false, "code": "zone_not_found", "error": "Zone not found"})
 		return
@@ -762,7 +763,7 @@ func (h *Handler) CollectItem(c *gin.Context) {
 
 	switch req.ItemType {
 	case "artifact":
-		var artifact common.Artifact
+		var artifact gameplay.Artifact
 		if err := h.db.First(&artifact, "id = ? AND zone_id = ? AND is_active = true", req.ItemID, zoneID).Error; err != nil {
 			c.JSON(http.StatusNotFound, gin.H{"success": false, "code": "not_found", "error": "Artifact not found"})
 			return
@@ -773,12 +774,12 @@ func (h *Handler) CollectItem(c *gin.Context) {
 		h.db.Save(&artifact)
 
 		// Add to inventory
-		inventory := common.InventoryItem{
+		inventory := gameplay.InventoryItem{
 			UserID:   user.ID,
 			ItemType: "artifact",
 			ItemID:   artifact.ID,
 			Quantity: 1,
-			Properties: common.JSONB{
+			Properties: gameplay.JSONB{
 				"name":           artifact.Name,
 				"type":           artifact.Type,
 				"rarity":         artifact.Rarity,
@@ -807,7 +808,7 @@ func (h *Handler) CollectItem(c *gin.Context) {
 		h.db.Model(&user).Update("total_artifacts", gorm.Expr("total_artifacts + ?", 1))
 
 	case "gear":
-		var gear common.Gear
+		var gear gameplay.Gear
 		if err := h.db.First(&gear, "id = ? AND zone_id = ? AND is_active = true", req.ItemID, zoneID).Error; err != nil {
 			c.JSON(http.StatusNotFound, gin.H{"success": false, "code": "not_found", "error": "Gear not found"})
 			return
@@ -818,7 +819,7 @@ func (h *Handler) CollectItem(c *gin.Context) {
 		h.db.Save(&gear)
 
 		// Vytvor inventory item s properties z gear objektu alebo fallback na GearService
-		properties := common.JSONB{
+		properties := gameplay.JSONB{
 			"name":           gear.Name,
 			"type":           gear.Type,
 			"level":          gear.Level,
@@ -883,7 +884,7 @@ func (h *Handler) CollectItem(c *gin.Context) {
 			properties["category_id"] = categoryID
 		}
 
-		inventoryItem := common.InventoryItem{
+		inventoryItem := gameplay.InventoryItem{
 			UserID:     user.ID,
 			ItemType:   "gear",
 			ItemID:     uuid.New(), // Unikátne ID pre tento konkrétny predmet
@@ -947,7 +948,7 @@ func (h *Handler) CollectItem(c *gin.Context) {
 
 // Helper function to update zone activity
 func (h *Handler) updateZoneActivity(zoneID uuid.UUID) {
-	h.db.Model(&common.Zone{}).Where("id = ?", zoneID).Update("last_activity", time.Now())
+	h.db.Model(&gameplay.Zone{}).Where("id = ?", zoneID).Update("last_activity", time.Now())
 }
 
 // Check and cleanup empty zone
@@ -956,11 +957,11 @@ func (h *Handler) checkAndCleanupEmptyZone(zoneID uuid.UUID) {
 	time.Sleep(30 * time.Second)
 
 	var activeArtifacts int64
-	h.db.Model(&common.Artifact{}).Where("zone_id = ? AND is_active = true", zoneID).Count(&activeArtifacts)
+	h.db.Model(&gameplay.Artifact{}).Where("zone_id = ? AND is_active = true", zoneID).Count(&activeArtifacts)
 
 	if activeArtifacts == 0 {
 		// Zone is empty, mark for cleanup soon
-		h.db.Model(&common.Zone{}).Where("id = ?", zoneID).Update("last_activity", time.Now().Add(-10*time.Minute))
+		h.db.Model(&gameplay.Zone{}).Where("id = ?", zoneID).Update("last_activity", time.Now().Add(-10*time.Minute))
 		log.Printf("🏰 Zone %s marked for empty cleanup", zoneID)
 	}
 }
@@ -1031,7 +1032,7 @@ func (h *Handler) getTierSpawnDistance(zoneTier int) (float64, float64) {
 }
 
 // ✅ ENHANCED: spawnItemsInZone s konfigurovateľnými spawn rates
-func (h *Handler) spawnItemsInZone(zoneID uuid.UUID, tier int, biome string, zoneCenter common.Location, zoneRadius int) {
+func (h *Handler) spawnItemsInZone(zoneID uuid.UUID, tier int, biome string, zoneCenter gameplay.Location, zoneRadius int) {
 	template := GetZoneTemplate(biome)
 
 	// ✅ KONFIGUROVATEĽNÉ NASTAVENIA - zmeň tieto hodnoty podľa potreby
@@ -1187,7 +1188,7 @@ func (h *Handler) spawnItemsInZone(zoneID uuid.UUID, tier int, biome string, zon
 }
 
 // Generate random GPS coordinates within zone radius
-func (h *Handler) generateRandomLocationInZone(center common.Location, radiusMeters int) common.Location {
+func (h *Handler) generateRandomLocationInZone(center gameplay.Location, radiusMeters int) gameplay.Location {
 	// Random angle (0-360 degrees)
 	angle := rand.Float64() * 2 * math.Pi
 
@@ -1199,7 +1200,7 @@ func (h *Handler) generateRandomLocationInZone(center common.Location, radiusMet
 	latOffset := (distance * math.Cos(angle)) / 111000
 	lngOffset := (distance * math.Sin(angle)) / (111000 * math.Cos(center.Latitude*math.Pi/180))
 
-	return common.Location{
+	return gameplay.Location{
 		Latitude:  center.Latitude + latOffset,
 		Longitude: center.Longitude + lngOffset,
 		Timestamp: time.Now(),
@@ -1222,7 +1223,7 @@ func (h *Handler) CleanupExpiredZones(c *gin.Context) {
 }
 
 func (h *Handler) GetExpiredZones(c *gin.Context) {
-	var expiredZones []common.Zone
+	var expiredZones []gameplay.Zone
 	h.db.Where("is_active = true AND expires_at < ?", time.Now()).Find(&expiredZones)
 
 	c.JSON(http.StatusOK, gin.H{
@@ -1263,7 +1264,7 @@ func (h *Handler) GetAvailableGear(c *gin.Context) {
 	}
 
 	// Get user tier
-	var user common.User
+	var user auth.User
 	if err := h.db.First(&user, "id = ?", userID).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
 		return
@@ -1380,7 +1381,7 @@ func (h *Handler) GetItemAnalytics(c *gin.Context) {
 
 func (h *Handler) GetAllUsers(c *gin.Context) {
 	// Get all users (Super Admin only)
-	var users []common.User
+	var users []auth.User
 	if err := h.db.Find(&users).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": "Failed to fetch users",

@@ -7,22 +7,23 @@ import (
 	"math/rand"
 	"time"
 
-	"geoanomaly/internal/common"
+	"geoanomaly/internal/auth"
+	"geoanomaly/internal/gameplay"
 
 	"github.com/google/uuid"
 )
 
 // Zone management functions
-func (h *Handler) getExistingZonesInArea(lat, lng, radiusMeters float64) []common.Zone {
-	var zones []common.Zone
+func (h *Handler) getExistingZonesInArea(lat, lng, radiusMeters float64) []gameplay.Zone {
+	var zones []gameplay.Zone
 
 	if err := h.db.Where("is_active = true").Find(&zones).Error; err != nil {
 		log.Printf("❌ Failed to query zones: %v", err)
-		return []common.Zone{}
+		return []gameplay.Zone{}
 	}
 
 	// Manual distance filtering
-	var filteredZones []common.Zone
+	var filteredZones []gameplay.Zone
 	for _, zone := range zones {
 		distance := CalculateDistance(lat, lng, zone.Location.Latitude, zone.Location.Longitude)
 		if distance <= radiusMeters {
@@ -36,7 +37,7 @@ func (h *Handler) getExistingZonesInArea(lat, lng, radiusMeters float64) []commo
 
 // Filter zones by tier based on user tier
 // This function ensures that users only see zones they are allowed to enter based on their tier
-func (h *Handler) filterZonesByTier(zones []common.Zone, userTier int) []common.Zone {
+func (h *Handler) filterZonesByTier(zones []gameplay.Zone, userTier int) []gameplay.Zone {
 	var maxVisibleTier int
 	switch userTier {
 	case 0:
@@ -48,7 +49,7 @@ func (h *Handler) filterZonesByTier(zones []common.Zone, userTier int) []common.
 	default:
 		maxVisibleTier = userTier
 	}
-	var visibleZones []common.Zone
+	var visibleZones []gameplay.Zone
 	for _, zone := range zones {
 		if zone.TierRequired <= maxVisibleTier {
 			visibleZones = append(visibleZones, zone)
@@ -86,17 +87,17 @@ func (h *Handler) calculateMaxZones(playerTier int) int {
 	}
 }
 
-func (h *Handler) buildZoneDetails(zone common.Zone, playerLat, playerLng float64, playerTier int) ZoneWithDetails {
+func (h *Handler) buildZoneDetails(zone gameplay.Zone, playerLat, playerLng float64, playerTier int) ZoneWithDetails {
 	distance := CalculateDistance(playerLat, playerLng, zone.Location.Latitude, zone.Location.Longitude)
 
 	// Počet aktívnych items
 	var artifactCount, gearCount int64
-	h.db.Model(&common.Artifact{}).Where("zone_id = ? AND is_active = true", zone.ID).Count(&artifactCount)
-	h.db.Model(&common.Gear{}).Where("zone_id = ? AND is_active = true", zone.ID).Count(&gearCount)
+	h.db.Model(&gameplay.Artifact{}).Where("zone_id = ? AND is_active = true", zone.ID).Count(&artifactCount)
+	h.db.Model(&gameplay.Gear{}).Where("zone_id = ? AND is_active = true", zone.ID).Count(&gearCount)
 
 	// Počet aktívnych hráčov
 	var playerCount int64
-	h.db.Model(&common.PlayerSession{}).Where("current_zone = ? AND is_online = true AND last_seen > ?", zone.ID, time.Now().Add(-5*time.Minute)).Count(&playerCount)
+	h.db.Model(&auth.PlayerSession{}).Where("current_zone = ? AND is_online = true AND last_seen > ?", zone.ID, time.Now().Add(-5*time.Minute)).Count(&playerCount)
 
 	details := ZoneWithDetails{
 		Zone:            zone,
@@ -268,7 +269,7 @@ func (h *Handler) getZoneCategory(tier int) string {
 
 // Keep existing biome-specific spawning functions
 func (h *Handler) spawnSpecificArtifact(zoneID uuid.UUID, artifactType, biome string, tier int) error {
-	var zone common.Zone
+	var zone gameplay.Zone
 	if err := h.db.First(&zone, "id = ?", zoneID).Error; err != nil {
 		return err
 	}
@@ -278,19 +279,19 @@ func (h *Handler) spawnSpecificArtifact(zoneID uuid.UUID, artifactType, biome st
 
 	lat, lng := h.generateRandomPosition(zone.Location.Latitude, zone.Location.Longitude, float64(zone.RadiusMeters))
 
-	artifact := common.Artifact{
-		BaseModel: common.BaseModel{ID: uuid.New()},
+	artifact := gameplay.Artifact{
+		BaseModel: gameplay.BaseModel{ID: uuid.New()},
 		ZoneID:    zoneID,
 		Name:      displayName,
 		Type:      artifactType,
 		Rarity:    rarity,
 		Biome:     biome,
-		Location: common.Location{
+		Location: gameplay.Location{
 			Latitude:  lat,
 			Longitude: lng,
 			Timestamp: time.Now(),
 		},
-		Properties: common.JSONB{
+		Properties: gameplay.JSONB{
 			"spawn_time":   time.Now().Unix(),
 			"spawner":      "biome_specific",
 			"zone_tier":    tier,
@@ -304,13 +305,13 @@ func (h *Handler) spawnSpecificArtifact(zoneID uuid.UUID, artifactType, biome st
 }
 
 func (h *Handler) spawnSpecificGear(zoneID uuid.UUID, gearType, biome string, tier int) error {
-	var zone common.Zone
+	var zone gameplay.Zone
 	if err := h.db.First(&zone, "id = ?", zoneID).Error; err != nil {
 		return err
 	}
 
 	// Najdi gear kategóriu v databáze
-	var gearCategory common.GearCategory
+	var gearCategory gameplay.GearCategory
 	if err := h.db.Where("id = ? AND is_active = ?", gearType, true).First(&gearCategory).Error; err != nil {
 		// Ak sa kategória nenájde, použij fallback
 		log.Printf("⚠️ Gear category %s not found in database, using fallback", gearType)
@@ -331,19 +332,19 @@ func (h *Handler) spawnSpecificGear(zoneID uuid.UUID, gearType, biome string, ti
 
 	lat, lng := h.generateRandomPosition(zone.Location.Latitude, zone.Location.Longitude, float64(zone.RadiusMeters))
 
-	gear := common.Gear{
-		BaseModel: common.BaseModel{ID: uuid.New()},
+	gear := gameplay.Gear{
+		BaseModel: gameplay.BaseModel{ID: uuid.New()},
 		ZoneID:    zoneID,
 		Name:      gearCategory.Name,
 		Type:      gearCategory.ID, // Použijeme ID kategórie ako type
 		Level:     gearCategory.Level,
 		Biome:     biome,
-		Location: common.Location{
+		Location: gameplay.Location{
 			Latitude:  lat,
 			Longitude: lng,
 			Timestamp: time.Now(),
 		},
-		Properties: common.JSONB{
+		Properties: gameplay.JSONB{
 			"spawn_time":         time.Now().Unix(),
 			"spawner":            "biome_specific",
 			"zone_tier":          tier,
@@ -366,7 +367,7 @@ func (h *Handler) spawnSpecificGear(zoneID uuid.UUID, gearType, biome string, ti
 
 // Fallback funkcia pre staré gear types
 func (h *Handler) spawnSpecificGearFallback(zoneID uuid.UUID, gearType, biome string, tier int) error {
-	var zone common.Zone
+	var zone gameplay.Zone
 	if err := h.db.First(&zone, "id = ?", zoneID).Error; err != nil {
 		return err
 	}
@@ -376,19 +377,19 @@ func (h *Handler) spawnSpecificGearFallback(zoneID uuid.UUID, gearType, biome st
 
 	lat, lng := h.generateRandomPosition(zone.Location.Latitude, zone.Location.Longitude, float64(zone.RadiusMeters))
 
-	gear := common.Gear{
-		BaseModel: common.BaseModel{ID: uuid.New()},
+	gear := gameplay.Gear{
+		BaseModel: gameplay.BaseModel{ID: uuid.New()},
 		ZoneID:    zoneID,
 		Name:      displayName,
 		Type:      gearType,
 		Level:     level,
 		Biome:     biome,
-		Location: common.Location{
+		Location: gameplay.Location{
 			Latitude:  lat,
 			Longitude: lng,
 			Timestamp: time.Now(),
 		},
-		Properties: common.JSONB{
+		Properties: gameplay.JSONB{
 			"spawn_time":   time.Now().Unix(),
 			"spawner":      "biome_specific",
 			"zone_tier":    tier,

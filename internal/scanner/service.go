@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"geoanomaly/internal/common"
+	"geoanomaly/internal/gameplay"
 	"geoanomaly/internal/loadout"
 
 	"github.com/google/uuid"
@@ -331,34 +331,39 @@ func (s *Service) Scan(userID uuid.UUID, req *ScanRequest) (*ScanResponse, error
 
 // getActiveZoneID - získa ID aktívnej zóny hráča z databázy
 func (s *Service) getActiveZoneID(userID uuid.UUID) (string, error) {
-	var session common.PlayerSession
-	if err := s.db.Where("user_id = ? AND current_zone IS NOT NULL", userID).First(&session).Error; err != nil {
+	var result struct {
+		CurrentZone *uuid.UUID `json:"current_zone"`
+	}
+	if err := s.db.Table("auth.player_sessions").
+		Select("current_zone").
+		Where("user_id = ? AND current_zone IS NOT NULL", userID).
+		First(&result).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return "", fmt.Errorf("no active zone session")
 		}
 		return "", fmt.Errorf("failed to get session: %w", err)
 	}
 
-	if session.CurrentZone == nil {
+	if result.CurrentZone == nil {
 		return "", fmt.Errorf("no active zone session")
 	}
 
-	return session.CurrentZone.String(), nil
+	return result.CurrentZone.String(), nil
 }
 
 // getZoneItems - načíta artefakty a gear v zóne
-func (s *Service) getZoneItems(zoneID string) ([]common.Artifact, []common.Gear, error) {
+func (s *Service) getZoneItems(zoneID string) ([]gameplay.Artifact, []gameplay.Gear, error) {
 	// Validácia UUID formátu
 	if _, err := uuid.Parse(zoneID); err != nil {
 		return nil, nil, fmt.Errorf("invalid zone ID: %w", err)
 	}
 
-	var artifacts []common.Artifact
+	var artifacts []gameplay.Artifact
 	if err := s.db.Where("zone_id = ? AND is_active = true AND is_claimed = false", zoneID).Find(&artifacts).Error; err != nil {
 		return nil, nil, fmt.Errorf("failed to load artifacts: %w", err)
 	}
 
-	var gear []common.Gear
+	var gear []gameplay.Gear
 	if err := s.db.Where("zone_id = ? AND is_active = true AND is_claimed = false", zoneID).Find(&gear).Error; err != nil {
 		return nil, nil, fmt.Errorf("failed to load gear: %w", err)
 	}
@@ -367,7 +372,7 @@ func (s *Service) getZoneItems(zoneID string) ([]common.Artifact, []common.Gear,
 }
 
 // filterItemsByScanner - filtruje itemy podľa scanner schopností
-func (s *Service) filterItemsByScanner(artifacts []common.Artifact, gear []common.Gear, req *ScanRequest, stats *ScannerStats, scanner *ScannerCatalog) []ScanResult {
+func (s *Service) filterItemsByScanner(artifacts []gameplay.Artifact, gear []gameplay.Gear, req *ScanRequest, stats *ScannerStats, scanner *ScannerCatalog) []ScanResult {
 	var results []ScanResult
 
 	// Použi fillCapsDefaults pre bezpečné doplnenie hodnôt
@@ -435,14 +440,14 @@ func (s *Service) createScanResult(item interface{}, req *ScanRequest, stats *Sc
 
 	// Extrahuj dáta z item
 	switch v := item.(type) {
-	case *common.Artifact:
+	case *gameplay.Artifact:
 		itemLat = v.Location.Latitude
 		itemLng = v.Location.Longitude
 		itemID = v.ID
 		itemName = v.Name
 		itemRarity = v.Rarity
 		itemType = "artifact"
-	case *common.Gear:
+	case *gameplay.Gear:
 		itemLat = v.Location.Latitude
 		itemLng = v.Location.Longitude
 		itemID = v.ID

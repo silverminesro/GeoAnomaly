@@ -1,7 +1,7 @@
 package inventory
 
 import (
-	"geoanomaly/internal/common"
+	"geoanomaly/internal/gameplay"
 	"net/http"
 	"time"
 
@@ -29,7 +29,7 @@ func (h *Handler) SetFavorite(c *gin.Context) {
 		return
 	}
 
-	var item common.InventoryItem
+	var item gameplay.InventoryItem
 	if err := h.db.Where("id = ? AND user_id = ? AND deleted_at IS NULL", itemUUID, userID).First(&item).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Item not found"})
 		return

@@ -6,7 +6,9 @@ import (
 	"strconv"
 	"time"
 
+	"geoanomaly/internal/auth"
 	"geoanomaly/internal/common"
+	"geoanomaly/internal/gameplay"
 	"geoanomaly/pkg/redis"
 
 	"github.com/gin-gonic/gin"
@@ -33,17 +35,17 @@ type UpdateLocationRequest struct {
 
 // ✅ OPRAVENÉ: Pridané TierExpires pole
 type UserProfileResponse struct {
-	ID          uuid.UUID              `json:"id"`
-	Username    string                 `json:"username"`
-	Email       string                 `json:"email"`
-	Tier        int                    `json:"tier"`
-	TierExpires *time.Time             `json:"tier_expires"`
-	XP          int                    `json:"xp"`
-	Level       int                    `json:"level"`
-	IsActive    bool                   `json:"is_active"`
-	CreatedAt   time.Time              `json:"created_at"`
-	Stats       UserStats              `json:"stats"`
-	Inventory   []common.InventoryItem `json:"inventory,omitempty"`
+	ID          uuid.UUID                `json:"id"`
+	Username    string                   `json:"username"`
+	Email       string                   `json:"email"`
+	Tier        int                      `json:"tier"`
+	TierExpires *time.Time               `json:"tier_expires"`
+	XP          int                      `json:"xp"`
+	Level       int                      `json:"level"`
+	IsActive    bool                     `json:"is_active"`
+	CreatedAt   time.Time                `json:"created_at"`
+	Stats       UserStats                `json:"stats"`
+	Inventory   []gameplay.InventoryItem `json:"inventory,omitempty"`
 }
 
 type UserStats struct {
@@ -71,7 +73,7 @@ func (h *Handler) GetProfile(c *gin.Context) {
 	// Pokús sa najskôr z cache
 	cacheKey := "user_profile:" + userID.(uuid.UUID).String()
 
-	var user common.User
+	var user auth.User
 	if err := h.db.Preload("Inventory").First(&user, "id = ?", userID).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
@@ -83,6 +85,10 @@ func (h *Handler) GetProfile(c *gin.Context) {
 
 	// Vypočítaj štatistiky
 	stats := h.calculateUserStats(user.ID)
+
+	// Načítaj inventory samostatne
+	var inventory []gameplay.InventoryItem
+	h.db.Where("user_id = ?", user.ID).Find(&inventory)
 
 	// ✅ OPRAVENÉ: Pridané TierExpires do response
 	response := UserProfileResponse{
@@ -96,7 +102,7 @@ func (h *Handler) GetProfile(c *gin.Context) {
 		IsActive:    user.IsActive,
 		CreatedAt:   user.CreatedAt,
 		Stats:       stats,
-		Inventory:   user.Inventory,
+		Inventory:   inventory,
 	}
 
 	// Cachuj na 5 minút (ak je Redis dostupný)
@@ -122,7 +128,7 @@ func (h *Handler) UpdateProfile(c *gin.Context) {
 	}
 
 	// Nájdi používateľa
-	var user common.User
+	var user auth.User
 	if err := h.db.First(&user, "id = ?", userID).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
 		return
@@ -133,7 +139,7 @@ func (h *Handler) UpdateProfile(c *gin.Context) {
 
 	if req.Username != "" {
 		// Skontroluj či username už neexistuje
-		var existingUser common.User
+		var existingUser auth.User
 		if err := h.db.Where("username = ? AND id != ?", req.Username, userID).First(&existingUser).Error; err == nil {
 			c.JSON(http.StatusConflict, gin.H{"error": "Username already exists"})
 			return
@@ -143,7 +149,7 @@ func (h *Handler) UpdateProfile(c *gin.Context) {
 
 	if req.Email != "" {
 		// Skontroluj či email už neexistuje
-		var existingUser common.User
+		var existingUser auth.User
 		if err := h.db.Where("email = ? AND id != ?", req.Email, userID).First(&existingUser).Error; err == nil {
 			c.JSON(http.StatusConflict, gin.H{"error": "Email already exists"})
 			return
@@ -192,13 +198,13 @@ func (h *Handler) GetInventory(c *gin.Context) {
 	offset := (page - 1) * limit
 
 	// ✅ OPRAVENÉ: Lepšie query building pre inventár
-	query := h.db.Model(&common.InventoryItem{}).Where("user_id = ?", userID)
+	query := h.db.Model(&gameplay.InventoryItem{}).Where("user_id = ?", userID)
 
 	if itemType != "" {
 		query = query.Where("item_type = ?", itemType)
 	}
 
-	var inventory []common.InventoryItem
+	var inventory []gameplay.InventoryItem
 	var totalCount int64
 
 	// ✅ OPRAVENÉ: Spočítaj celkový počet s error handling
@@ -223,7 +229,7 @@ func (h *Handler) GetInventory(c *gin.Context) {
 
 	// ✅ OPRAVENÉ: Inicializuj prázdny slice ak je nil
 	if inventory == nil {
-		inventory = []common.InventoryItem{}
+		inventory = []gameplay.InventoryItem{}
 	}
 
 	// Vypočítaj total pages
@@ -313,13 +319,13 @@ func (h *Handler) calculateUserStats(userID uuid.UUID) UserStats {
 	var totalGear int64
 
 	// Spočítaj artefakty s error handling
-	if err := h.db.Model(&common.InventoryItem{}).Where("user_id = ? AND item_type = ?", userID, "artifact").Count(&totalArtifacts).Error; err != nil {
+	if err := h.db.Model(&gameplay.InventoryItem{}).Where("user_id = ? AND item_type = ?", userID, "artifact").Count(&totalArtifacts).Error; err != nil {
 		log.Printf("⚠️ Failed to count artifacts for user %s: %v", userID, err)
 		totalArtifacts = 0
 	}
 
 	// Spočítaj gear s error handling
-	if err := h.db.Model(&common.InventoryItem{}).Where("user_id = ? AND item_type = ?", userID, "gear").Count(&totalGear).Error; err != nil {
+	if err := h.db.Model(&gameplay.InventoryItem{}).Where("user_id = ? AND item_type = ?", userID, "gear").Count(&totalGear).Error; err != nil {
 		log.Printf("⚠️ Failed to count gear for user %s: %v", userID, err)
 		totalGear = 0
 	}
@@ -340,7 +346,7 @@ func (h *Handler) calculateUserStats(userID uuid.UUID) UserStats {
 
 // ✅ OPRAVENÉ: updatePlayerSession používa nový PlayerSession model s individual fields
 func (h *Handler) updatePlayerSession(userID uuid.UUID, location common.LocationWithAccuracy) error {
-	session := common.PlayerSession{
+	session := auth.PlayerSession{
 		UserID:   userID,
 		LastSeen: time.Now(),
 		IsOnline: true,
@@ -410,7 +416,7 @@ func (h *Handler) GetUserStats(c *gin.Context) {
 
 func (h *Handler) GetAllUsers(c *gin.Context) {
 	// Super Admin only - get all users
-	var users []common.User
+	var users []auth.User
 	if err := h.db.Select("id, username, email, tier, is_active, is_banned, created_at, updated_at, xp, level, total_artifacts, total_gear").Find(&users).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error":   "Failed to fetch users",

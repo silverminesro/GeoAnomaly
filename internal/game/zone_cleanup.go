@@ -5,7 +5,8 @@ import (
 	"log"
 	"time"
 
-	"geoanomaly/internal/common"
+	"geoanomaly/internal/auth"
+	"geoanomaly/internal/gameplay"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -16,12 +17,12 @@ type CleanupService struct {
 }
 
 type CleanupResult struct {
-	ExpiredZones    []common.Zone `json:"expired_zones"`
-	CleanedCount    int           `json:"cleaned_count"`
-	ItemsRemoved    int           `json:"items_removed"`
-	PlayersAffected int           `json:"players_affected"`
-	CleanupDuration string        `json:"cleanup_duration"`
-	NextCleanupIn   string        `json:"next_cleanup_in"`
+	ExpiredZones    []gameplay.Zone `json:"expired_zones"`
+	CleanedCount    int             `json:"cleaned_count"`
+	ItemsRemoved    int             `json:"items_removed"`
+	PlayersAffected int             `json:"players_affected"`
+	CleanupDuration string          `json:"cleanup_duration"`
+	NextCleanupIn   string          `json:"next_cleanup_in"`
 }
 
 func NewCleanupService(db *gorm.DB) *CleanupService {
@@ -34,11 +35,11 @@ func (cs *CleanupService) CleanupExpiredZones() CleanupResult {
 	log.Printf("🧹 Starting zone cleanup at %s", startTime.Format("15:04:05"))
 
 	result := CleanupResult{
-		ExpiredZones: []common.Zone{},
+		ExpiredZones: []gameplay.Zone{},
 	}
 
 	// Find expired zones
-	var expiredZones []common.Zone
+	var expiredZones []gameplay.Zone
 	if err := cs.db.Where("is_active = true AND auto_cleanup = true AND expires_at < ?", time.Now()).Find(&expiredZones).Error; err != nil {
 		log.Printf("❌ Failed to find expired zones: %v", err)
 		return result
@@ -71,35 +72,35 @@ func (cs *CleanupService) CleanupExpiredZones() CleanupResult {
 }
 
 // ✅ Cleanup single zone
-func (cs *CleanupService) cleanupSingleZone(zone common.Zone) (int, int) {
+func (cs *CleanupService) cleanupSingleZone(zone gameplay.Zone) (int, int) {
 	log.Printf("🗑️ Cleaning zone: %s (expired %s)", zone.Name, time.Since(*zone.ExpiresAt).String())
 
 	itemsRemoved := 0
 	playersAffected := 0
 
 	// 1. Remove/deactivate artifacts
-	var artifacts []common.Artifact
+	var artifacts []gameplay.Artifact
 	cs.db.Where("zone_id = ? AND is_active = true", zone.ID).Find(&artifacts)
 	if len(artifacts) > 0 {
-		cs.db.Model(&common.Artifact{}).Where("zone_id = ?", zone.ID).Update("is_active", false)
+		cs.db.Model(&gameplay.Artifact{}).Where("zone_id = ?", zone.ID).Update("is_active", false)
 		itemsRemoved += len(artifacts)
 		log.Printf("   📦 Deactivated %d artifacts", len(artifacts))
 	}
 
 	// 2. Remove/deactivate gear
-	var gear []common.Gear
+	var gear []gameplay.Gear
 	cs.db.Where("zone_id = ? AND is_active = true", zone.ID).Find(&gear)
 	if len(gear) > 0 {
-		cs.db.Model(&common.Gear{}).Where("zone_id = ?", zone.ID).Update("is_active", false)
+		cs.db.Model(&gameplay.Gear{}).Where("zone_id = ?", zone.ID).Update("is_active", false)
 		itemsRemoved += len(gear)
 		log.Printf("   ⚔️ Deactivated %d gear items", len(gear))
 	}
 
 	// 3. Remove players from zone
-	var sessions []common.PlayerSession
+	var sessions []auth.PlayerSession
 	cs.db.Where("current_zone = ?", zone.ID).Find(&sessions)
 	if len(sessions) > 0 {
-		cs.db.Model(&common.PlayerSession{}).Where("current_zone = ?", zone.ID).Update("current_zone", nil)
+		cs.db.Model(&auth.PlayerSession{}).Where("current_zone = ?", zone.ID).Update("current_zone", nil)
 		playersAffected = len(sessions)
 		log.Printf("   👥 Removed %d players from zone", playersAffected)
 	}
@@ -115,10 +116,10 @@ func (cs *CleanupService) cleanupSingleZone(zone common.Zone) (int, int) {
 }
 
 // ✅ Get zones about to expire
-func (cs *CleanupService) GetExpiringZones(warningMinutes int) []common.Zone {
+func (cs *CleanupService) GetExpiringZones(warningMinutes int) []gameplay.Zone {
 	warningTime := time.Now().Add(time.Duration(warningMinutes) * time.Minute)
 
-	var expiringZones []common.Zone
+	var expiringZones []gameplay.Zone
 	cs.db.Where("is_active = true AND expires_at BETWEEN ? AND ?", time.Now(), warningTime).Find(&expiringZones)
 
 	return expiringZones
@@ -126,7 +127,7 @@ func (cs *CleanupService) GetExpiringZones(warningMinutes int) []common.Zone {
 
 // ✅ Force cleanup specific zone
 func (cs *CleanupService) ForceCleanupZone(zoneID uuid.UUID, reason string) error {
-	var zone common.Zone
+	var zone gameplay.Zone
 	if err := cs.db.First(&zone, "id = ? AND is_active = true", zoneID).Error; err != nil {
 		return fmt.Errorf("zone not found: %v", err)
 	}
@@ -146,10 +147,10 @@ func (cs *CleanupService) ForceCleanupZone(zoneID uuid.UUID, reason string) erro
 func (cs *CleanupService) GetCleanupStats() map[string]interface{} {
 	var totalZones, activeZones, expiredZones, cleanedZones int64
 
-	cs.db.Model(&common.Zone{}).Count(&totalZones)
-	cs.db.Model(&common.Zone{}).Where("is_active = true").Count(&activeZones)
-	cs.db.Model(&common.Zone{}).Where("is_active = true AND expires_at < ?", time.Now()).Count(&expiredZones)
-	cs.db.Model(&common.Zone{}).Where("is_active = false").Count(&cleanedZones)
+	cs.db.Model(&gameplay.Zone{}).Count(&totalZones)
+	cs.db.Model(&gameplay.Zone{}).Where("is_active = true").Count(&activeZones)
+	cs.db.Model(&gameplay.Zone{}).Where("is_active = true AND expires_at < ?", time.Now()).Count(&expiredZones)
+	cs.db.Model(&gameplay.Zone{}).Where("is_active = false").Count(&cleanedZones)
 
 	return map[string]interface{}{
 		"total_zones":   totalZones,

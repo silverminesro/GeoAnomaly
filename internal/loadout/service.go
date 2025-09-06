@@ -4,7 +4,7 @@ import (
 	"errors"
 	"time"
 
-	"geoanomaly/internal/common"
+	"geoanomaly/internal/gameplay"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -19,21 +19,21 @@ func NewService(db *gorm.DB) *Service {
 }
 
 // GetLoadoutSlots vráti všetky dostupné sloty
-func (s *Service) GetLoadoutSlots() ([]common.LoadoutSlot, error) {
-	var slots []common.LoadoutSlot
+func (s *Service) GetLoadoutSlots() ([]gameplay.LoadoutSlot, error) {
+	var slots []gameplay.LoadoutSlot
 	err := s.db.Order("\"order\" ASC").Find(&slots).Error
 	return slots, err
 }
 
 // GetUserLoadout vráti aktuálny loadout používateľa
-func (s *Service) GetUserLoadout(userID uuid.UUID) (map[string]*common.LoadoutItem, error) {
-	var loadoutItems []common.LoadoutItem
+func (s *Service) GetUserLoadout(userID uuid.UUID) (map[string]*gameplay.LoadoutItem, error) {
+	var loadoutItems []gameplay.LoadoutItem
 	err := s.db.Where("user_id = ?", userID).Find(&loadoutItems).Error
 	if err != nil {
 		return nil, err
 	}
 
-	loadout := make(map[string]*common.LoadoutItem)
+	loadout := make(map[string]*gameplay.LoadoutItem)
 	for i := range loadoutItems {
 		loadout[loadoutItems[i].SlotID] = &loadoutItems[i]
 	}
@@ -44,13 +44,13 @@ func (s *Service) GetUserLoadout(userID uuid.UUID) (map[string]*common.LoadoutIt
 // EquipItem vybaví gear na daný slot
 func (s *Service) EquipItem(userID uuid.UUID, itemID uuid.UUID, slotID string) error {
 	// Skontroluj, či slot existuje
-	var slot common.LoadoutSlot
+	var slot gameplay.LoadoutSlot
 	if err := s.db.Where("id = ?", slotID).First(&slot).Error; err != nil {
 		return errors.New("invalid slot")
 	}
 
 	// Skontroluj, či item existuje v inventári používateľa
-	var inventoryItem common.InventoryItem
+	var inventoryItem gameplay.InventoryItem
 	if err := s.db.Where("id = ? AND user_id = ? AND item_type = ?", itemID, userID, "gear").First(&inventoryItem).Error; err != nil {
 		return errors.New("item not found in inventory")
 	}
@@ -63,12 +63,12 @@ func (s *Service) EquipItem(userID uuid.UUID, itemID uuid.UUID, slotID string) e
 
 	return s.db.Transaction(func(tx *gorm.DB) error {
 		// Odvybav existujúci gear v tomto slote
-		if err := tx.Where("user_id = ? AND slot_id = ?", userID, slotID).Delete(&common.LoadoutItem{}).Error; err != nil {
+		if err := tx.Where("user_id = ? AND slot_id = ?", userID, slotID).Delete(&gameplay.LoadoutItem{}).Error; err != nil {
 			return err
 		}
 
 		// Vytvor nový loadout item
-		loadoutItem := common.LoadoutItem{
+		loadoutItem := gameplay.LoadoutItem{
 			UserID:     userID,
 			SlotID:     slotID,
 			ItemID:     itemID,
@@ -118,7 +118,7 @@ func (s *Service) EquipItem(userID uuid.UUID, itemID uuid.UUID, slotID string) e
 func (s *Service) UnequipItem(userID uuid.UUID, slotID string) error {
 	return s.db.Transaction(func(tx *gorm.DB) error {
 		// Nájdi loadout item
-		var loadoutItem common.LoadoutItem
+		var loadoutItem gameplay.LoadoutItem
 		if err := tx.Where("user_id = ? AND slot_id = ?", userID, slotID).First(&loadoutItem).Error; err != nil {
 			return errors.New("no item equipped in this slot")
 		}
@@ -129,7 +129,7 @@ func (s *Service) UnequipItem(userID uuid.UUID, slotID string) error {
 		}
 
 		// Označ item ako nevybavený v inventári
-		var inventoryItem common.InventoryItem
+		var inventoryItem gameplay.InventoryItem
 		if err := tx.Where("id = ? AND user_id = ?", loadoutItem.ItemID, userID).First(&inventoryItem).Error; err != nil {
 			return err
 		}
@@ -142,7 +142,7 @@ func (s *Service) UnequipItem(userID uuid.UUID, slotID string) error {
 
 // RepairItem opraví durability gearu
 func (s *Service) RepairItem(userID uuid.UUID, slotID string, repairAmount int) error {
-	var loadoutItem common.LoadoutItem
+	var loadoutItem gameplay.LoadoutItem
 	if err := s.db.Where("user_id = ? AND slot_id = ?", userID, slotID).First(&loadoutItem).Error; err != nil {
 		return errors.New("no item equipped in this slot")
 	}
@@ -165,7 +165,7 @@ func (s *Service) RepairItem(userID uuid.UUID, slotID string, repairAmount int) 
 
 // GetLoadoutStats vráti štatistiky loadoutu
 func (s *Service) GetLoadoutStats(userID uuid.UUID) (map[string]interface{}, error) {
-	var loadoutItems []common.LoadoutItem
+	var loadoutItems []gameplay.LoadoutItem
 	if err := s.db.Where("user_id = ?", userID).Find(&loadoutItems).Error; err != nil {
 		return nil, err
 	}
@@ -219,15 +219,15 @@ func (s *Service) GetLoadoutStats(userID uuid.UUID) (map[string]interface{}, err
 }
 
 // GetGearCategories vráti všetky kategórie gearu
-func (s *Service) GetGearCategories() ([]common.GearCategory, error) {
-	var categories []common.GearCategory
+func (s *Service) GetGearCategories() ([]gameplay.GearCategory, error) {
+	var categories []gameplay.GearCategory
 	err := s.db.Where("is_active = ?", true).Order("level ASC, name ASC").Find(&categories).Error
 	return categories, err
 }
 
 // ApplyDurabilityDamage aplikuje poškodenie na gear pri návšteve zóny
 func (s *Service) ApplyDurabilityDamage(userID uuid.UUID, zoneDangerLevel int, zoneBiome string) error {
-	var loadoutItems []common.LoadoutItem
+	var loadoutItems []gameplay.LoadoutItem
 	if err := s.db.Where("user_id = ?", userID).Find(&loadoutItems).Error; err != nil {
 		return err
 	}
@@ -246,7 +246,7 @@ func (s *Service) ApplyDurabilityDamage(userID uuid.UUID, zoneDangerLevel int, z
 }
 
 // calculateDurabilityDamage vypočítá poškodenie durability
-func calculateDurabilityDamage(dangerLevel int, biome string, item common.LoadoutItem) int {
+func calculateDurabilityDamage(dangerLevel int, biome string, item gameplay.LoadoutItem) int {
 	baseDamage := dangerLevel * 2 // Základné poškodenie podľa danger level
 
 	// Biome modifiers

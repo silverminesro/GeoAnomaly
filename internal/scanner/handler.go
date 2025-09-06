@@ -7,8 +7,6 @@ import (
 	"strings"
 	"time"
 
-	"geoanomaly/internal/common"
-
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -98,13 +96,18 @@ func (h *Handler) Scan(c *gin.Context) {
 // ✅ NOVÉ: updatePlayerLocation - aktualizuje polohu v player_sessions
 func (h *Handler) updatePlayerLocation(userID uuid.UUID, latitude, longitude float64) {
 	// Aktualizuj player session s novou polohou
-	session := common.PlayerSession{
+	session := struct {
+		UserID                uuid.UUID
+		LastSeen              time.Time
+		IsOnline              bool
+		LastLocationLatitude  float64
+		LastLocationLongitude float64
+	}{
 		UserID:                userID,
 		LastSeen:              time.Now(),
 		IsOnline:              true,
 		LastLocationLatitude:  latitude,
 		LastLocationLongitude: longitude,
-		LastLocationTimestamp: time.Now(),
 	}
 
 	// Upsert player session

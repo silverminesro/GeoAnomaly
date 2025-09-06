@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"time"
 
-	"geoanomaly/internal/common"
+	"geoanomaly/internal/gameplay"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -50,7 +50,7 @@ func (h *Handler) DeleteItem(c *gin.Context) {
 	}
 
 	// Find item by model (not map)
-	var item common.InventoryItem
+	var item gameplay.InventoryItem
 	if err := h.db.Where("id = ? AND user_id = ? AND deleted_at IS NULL", itemUUID, userUUID).First(&item).Error; err != nil {
 		fmt.Printf("❌ Failed to find item: %v\n", err)
 		if err == gorm.ErrRecordNotFound {

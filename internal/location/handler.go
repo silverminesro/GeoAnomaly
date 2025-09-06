@@ -8,7 +8,9 @@ import (
 	"strconv"
 	"time"
 
+	"geoanomaly/internal/auth"
 	"geoanomaly/internal/common"
+	"geoanomaly/internal/gameplay"
 	"geoanomaly/pkg/redis"
 
 	"github.com/gin-gonic/gin"
@@ -150,20 +152,22 @@ func (h *Handler) GetNearbyPlayers(c *gin.Context) {
 	}
 
 	// Nájdi všetkých hráčov v tejto zóne
-	var playerSessions []common.PlayerSession
+	var playerSessions []auth.PlayerSession
 	if err := h.db.Preload("User").Where("current_zone = ? AND user_id != ? AND is_online = true", currentZone, userID).Find(&playerSessions).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch players"})
 		return
 	}
 
 	// Získaj informácie o zóne
-	var zone common.Zone
+	var zone gameplay.Zone
 	h.db.First(&zone, "id = ?", currentZone)
 
 	// Vytvor response
 	var players []PlayerInZone
 	for _, session := range playerSessions {
-		if session.User == nil {
+		// Načítaj User samostatne
+		var user auth.User
+		if err := h.db.First(&user, "id = ?", session.UserID).Error; err != nil {
 			continue
 		}
 
@@ -174,8 +178,8 @@ func (h *Handler) GetNearbyPlayers(c *gin.Context) {
 		if distance <= 500 {
 			player := PlayerInZone{
 				UserID:      session.UserID,
-				Username:    session.User.Username,
-				Tier:        session.User.Tier,
+				Username:    user.Username,
+				Tier:        user.Tier,
 				LastSeen:    session.LastSeen,
 				Distance:    distance,
 				IsOnline:    session.IsOnline && time.Since(session.LastSeen) < 5*time.Minute,
@@ -211,13 +215,13 @@ func (h *Handler) GetZoneActivity(c *gin.Context) {
 
 	// Počet hráčov v zóne
 	var activePlayersCount int64
-	h.db.Model(&common.PlayerSession{}).Where("current_zone = ? AND is_online = true AND last_seen > ?", zoneID, time.Now().Add(-5*time.Minute)).Count(&activePlayersCount)
+	h.db.Model(&auth.PlayerSession{}).Where("current_zone = ? AND is_online = true AND last_seen > ?", zoneID, time.Now().Add(-5*time.Minute)).Count(&activePlayersCount)
 
 	// Posledné aktivity (collecting, spawning)
 	var recentCollections []gin.H
 
 	// Nedávno zbierané artefakty
-	var recentArtifacts []common.InventoryItem
+	var recentArtifacts []gameplay.InventoryItem
 	h.db.Where("item_type = ? AND created_at > ?", "artifact", time.Now().Add(-1*time.Hour)).
 		Order("created_at DESC").
 		Limit(10).
@@ -238,11 +242,11 @@ func (h *Handler) GetZoneActivity(c *gin.Context) {
 
 	// Aktívne artefakty v zóne
 	var activeArtifacts int64
-	h.db.Model(&common.Artifact{}).Where("zone_id = ? AND is_active = true", zoneID).Count(&activeArtifacts)
+	h.db.Model(&gameplay.Artifact{}).Where("zone_id = ? AND is_active = true", zoneID).Count(&activeArtifacts)
 
 	// Aktívne gear v zóne
 	var activeGear int64
-	h.db.Model(&common.Gear{}).Where("zone_id = ? AND is_active = true", zoneID).Count(&activeGear)
+	h.db.Model(&gameplay.Gear{}).Where("zone_id = ? AND is_active = true", zoneID).Count(&activeGear)
 
 	response := gin.H{
 		"zone_id":          zoneID,
@@ -258,7 +262,7 @@ func (h *Handler) GetZoneActivity(c *gin.Context) {
 
 // ✅ OPRAVENÉ: Pomocné funkcie
 func (h *Handler) findCurrentZone(lat, lng float64) *uuid.UUID {
-	var zones []common.Zone
+	var zones []gameplay.Zone
 
 	// ✅ OPRAVENÉ: Simplified query bez PostGIS dependency (rovnako ako v game handler)
 	if err := h.db.Where("is_active = true").Find(&zones).Error; err != nil {
@@ -285,7 +289,7 @@ func (h *Handler) updateUserLocation(userID uuid.UUID, location common.LocationW
 
 // ✅ OPRAVENÉ: updatePlayerSession s LocationWithAccuracy a individual fields
 func (h *Handler) updatePlayerSession(userID uuid.UUID, username string, currentZone *uuid.UUID, location common.LocationWithAccuracy, speed, heading float64) {
-	session := common.PlayerSession{
+	session := auth.PlayerSession{
 		UserID:      userID,
 		LastSeen:    time.Now(),
 		IsOnline:    true,

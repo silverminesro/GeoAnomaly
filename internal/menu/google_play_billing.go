@@ -237,7 +237,7 @@ func (g *GooglePlayBillingService) ProcessGooglePlayPurchase(userID uuid.UUID, r
 		}
 
 		// Update user tier and expiration
-		if err := tx.Model(&common.User{}).
+		if err := tx.Model(&User{}).
 			Where("id = ?", userID).
 			Updates(map[string]interface{}{
 				"tier":         tierLevel,
@@ -341,7 +341,7 @@ func (g *GooglePlayBillingService) ProcessGooglePlaySubscription(userID uuid.UUI
 		}
 
 		// Update user tier and expiration
-		if err := tx.Model(&common.User{}).
+		if err := tx.Model(&User{}).
 			Where("id = ?", userID).
 			Updates(map[string]interface{}{
 				"tier":         tierLevel,

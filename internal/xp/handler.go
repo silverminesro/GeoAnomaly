@@ -1,7 +1,8 @@
 package xp
 
 import (
-	"geoanomaly/internal/common"
+	"fmt"
+	"geoanomaly/internal/auth"
 	"log"
 	"time"
 
@@ -20,7 +21,7 @@ func NewHandler(db *gorm.DB) *Handler {
 // ✅ MAIN: Award XP for artifact collection
 func (h *Handler) AwardArtifactXP(userID uuid.UUID, rarity, biome string, zoneTier int) (*XPResult, error) {
 	// Get current user
-	var user common.User
+	var user auth.User
 	if err := h.db.First(&user, "id = ?", userID).Error; err != nil {
 		return nil, err
 	}
@@ -128,4 +129,136 @@ func (h *Handler) getLevelFromXP(totalXP int) int {
 	}
 
 	return 1 // Fallback to level 1
+}
+
+// =============================================
+// LABORATORY XP SYSTEM INTEGRATION
+// =============================================
+
+// LaboratoryXPSources definuje XP hodnoty pre laboratory aktivity
+var LaboratoryXPSources = map[string]int{
+	"research_basic":    25,  // Basic research
+	"research_advanced": 50,  // Advanced research
+	"research_expert":   100, // Expert research
+	"crafting_basic":    15,  // Basic crafting
+	"crafting_advanced": 30,  // Advanced crafting
+	"crafting_expert":   60,  // Expert crafting
+	"task_daily":        20,  // Daily task completion
+	"task_weekly":       50,  // Weekly task completion
+	"task_monthly":      150, // Monthly task completion
+	"battery_charging":  10,  // Battery charging
+}
+
+// AwardLaboratoryXP pridáva XP z laboratory aktivít do player XP systému
+func (h *Handler) AwardLaboratoryXP(userID uuid.UUID, activity string, amount int) (interface{}, error) {
+	// Get current user
+	var user auth.User
+	if err := h.db.First(&user, "id = ?", userID).Error; err != nil {
+		return nil, err
+	}
+
+	// Validate activity
+	if amount <= 0 {
+		return nil, fmt.Errorf("invalid XP amount: %d", amount)
+	}
+
+	oldLevel := user.Level
+	oldXP := user.XP
+	newXP := oldXP + amount
+
+	// Update user XP
+	if err := h.db.Model(&user).Update("xp", newXP).Error; err != nil {
+		return nil, err
+	}
+
+	// Check for level up
+	newLevel := h.getLevelFromXP(newXP)
+	levelUp := newLevel > oldLevel
+
+	var levelUpInfo *LevelUpInfo
+	if levelUp {
+		// Update user level
+		if err := h.db.Model(&user).Update("level", newLevel).Error; err != nil {
+			return nil, err
+		}
+
+		levelUpInfo = &LevelUpInfo{
+			OldLevel:    oldLevel,
+			NewLevel:    newLevel,
+			Rewards:     h.getLaboratoryLevelUpRewards(newLevel),
+			LevelUpTime: time.Now().Unix(),
+		}
+
+		log.Printf("🎉 LABORATORY LEVEL UP! User %s: %d → %d (XP: %d → %d) from %s",
+			userID, oldLevel, newLevel, oldXP, newXP, activity)
+	}
+
+	// Create laboratory-specific breakdown
+	breakdown := XPBreakdown{
+		BaseXP:      amount,
+		RarityBonus: 0,
+		BiomeBonus:  0,
+		TierBonus:   0,
+	}
+
+	result := &XPResult{
+		XPGained:     amount,
+		TotalXP:      newXP,
+		CurrentLevel: newLevel,
+		LevelUp:      levelUp,
+		Breakdown:    breakdown,
+		LevelUpInfo:  levelUpInfo,
+	}
+
+	return result, nil
+}
+
+// GetLaboratoryXPAmount vráti XP množstvo pre danú aktivitu
+func (h *Handler) GetLaboratoryXPAmount(activity string) int {
+	if amount, exists := LaboratoryXPSources[activity]; exists {
+		return amount
+	}
+	return 0
+}
+
+// getLaboratoryLevelUpRewards vráti rewards pre laboratory level up
+func (h *Handler) getLaboratoryLevelUpRewards(newLevel int) []string {
+	rewards := []string{"Level progression unlocked"}
+
+	switch newLevel {
+	case 2:
+		rewards = append(rewards, "Research system unlocked", "2 charging slots available")
+	case 3:
+		rewards = append(rewards, "Crafting system unlocked", "3 charging slots available")
+	case 5:
+		rewards = append(rewards, "Advanced laboratory features unlocked")
+	case 10:
+		rewards = append(rewards, "Master laboratory features unlocked")
+	}
+
+	return rewards
+}
+
+// GetUserLaboratoryLevel vráti laboratórny level na základe player levelu
+func (h *Handler) GetUserLaboratoryLevel(playerLevel int) int {
+	switch {
+	case playerLevel >= 3:
+		return 3 // Crafting unlocked
+	case playerLevel >= 2:
+		return 2 // Research unlocked
+	default:
+		return 1 // Basic laboratory
+	}
+}
+
+// CanUnlockLaboratoryFeature kontroluje či môže hráč odomknúť laboratórnu funkciu
+func (h *Handler) CanUnlockLaboratoryFeature(playerLevel int, feature string) bool {
+	switch feature {
+	case "research":
+		return playerLevel >= 2
+	case "crafting":
+		return playerLevel >= 3
+	default:
+		return false
+	}
 }

@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"time"
 
-	"geoanomaly/internal/common"
+	"geoanomaly/internal/gameplay"
 
 	"github.com/google/uuid"
 )
@@ -310,10 +310,10 @@ type ScanSession struct {
 
 // ZoneArtifacts represents all items in a zone for encryption
 type ZoneArtifacts struct {
-	Artifacts []common.Artifact `json:"artifacts"`
-	Gear      []common.Gear     `json:"gear"`
-	ZoneID    string            `json:"zone_id"`
-	Timestamp time.Time         `json:"timestamp"`
+	Artifacts []gameplay.Artifact `json:"artifacts"`
+	Gear      []gameplay.Gear     `json:"gear"`
+	ZoneID    string              `json:"zone_id"`
+	Timestamp time.Time           `json:"timestamp"`
 }
 
 // ✅ REMOVED: ClaimRequest model - now using CollectItem system

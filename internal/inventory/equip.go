@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"time"
 
-	"geoanomaly/internal/common"
+	"geoanomaly/internal/gameplay"
 
 	"github.com/gin-gonic/gin"
 )
@@ -24,7 +24,7 @@ func (h *Handler) EquipItem(c *gin.Context) {
 	}
 
 	// Nájdi item v inventári používateľa
-	var item common.InventoryItem
+	var item gameplay.InventoryItem
 	if err := h.db.Where("id = ? AND user_id = ?", itemID, userID).First(&item).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Item not found"})
 		return
@@ -43,7 +43,7 @@ func (h *Handler) EquipItem(c *gin.Context) {
 	}
 
 	// Odvybav všetky geary tohto používateľa na tomto slote
-	var itemsToUnequip []common.InventoryItem
+	var itemsToUnequip []gameplay.InventoryItem
 	if err := h.db.Where("user_id = ? AND item_type = ? AND properties->>'slot' = ?", userID, "gear", slotValue).Find(&itemsToUnequip).Error; err == nil {
 		for i := range itemsToUnequip {
 			if eq, _ := itemsToUnequip[i].Properties["equipped"].(bool); eq {

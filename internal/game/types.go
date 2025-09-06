@@ -1,7 +1,7 @@
 package game
 
 import (
-	"geoanomaly/internal/common"
+	"geoanomaly/internal/gameplay"
 	"geoanomaly/internal/loadout"
 	"time"
 
@@ -34,16 +34,16 @@ type ScanAreaResponse struct {
 }
 
 type ZoneWithDetails struct {
-	Zone            common.Zone `json:"zone"`
-	DistanceMeters  float64     `json:"distance_meters"`
-	CanEnter        bool        `json:"can_enter"`
-	ActiveArtifacts int         `json:"active_artifacts"`
-	ActiveGear      int         `json:"active_gear"`
-	ActivePlayers   int         `json:"active_players"`
-	ExpiresAt       *int64      `json:"expires_at,omitempty"`
-	TimeToExpiry    *string     `json:"time_to_expiry,omitempty"`
-	Biome           string      `json:"biome"`
-	DangerLevel     string      `json:"danger_level"`
+	Zone            gameplay.Zone `json:"zone"`
+	DistanceMeters  float64       `json:"distance_meters"`
+	CanEnter        bool          `json:"can_enter"`
+	ActiveArtifacts int           `json:"active_artifacts"`
+	ActiveGear      int           `json:"active_gear"`
+	ActivePlayers   int           `json:"active_players"`
+	ExpiresAt       *int64        `json:"expires_at,omitempty"`
+	TimeToExpiry    *string       `json:"time_to_expiry,omitempty"`
+	Biome           string        `json:"biome"`
+	DangerLevel     string        `json:"danger_level"`
 }
 
 type LocationPoint struct {

@@ -3,10 +3,10 @@ package game
 import (
 	"context"
 	"fmt"
+	"geoanomaly/internal/auth"
+	"geoanomaly/internal/gameplay"
 	"math"
 	"time"
-
-	"geoanomaly/internal/common"
 
 	"github.com/google/uuid"
 )
@@ -87,7 +87,7 @@ func (h *Handler) getSessionItemsCollected(userID uuid.UUID, zoneID *uuid.UUID, 
 	// Count items collected from this zone since entered
 	var count int64
 
-	h.db.Model(&common.InventoryItem{}).
+	h.db.Model(&gameplay.InventoryItem{}).
 		Where("user_id = ? AND created_at > ? AND properties->>'collected_from' = ?",
 			userID, enteredAt, zoneID.String()).
 		Count(&count)
@@ -124,7 +124,7 @@ func (h *Handler) getZoneInfo(zoneID *uuid.UUID) (string, string, string, int) {
 		return "Unknown Zone", "forest", "low", 0
 	}
 
-	var zone common.Zone
+	var zone gameplay.Zone
 	if err := h.db.First(&zone, "id = ?", zoneID).Error; err != nil {
 		return "Unknown Zone", "forest", "low", 0
 	}
@@ -133,7 +133,7 @@ func (h *Handler) getZoneInfo(zoneID *uuid.UUID) (string, string, string, int) {
 }
 
 // ✅ NEW: Session data storage in Properties
-func (h *Handler) storeSessionData(session *common.PlayerSession, data SessionTracker) {
+func (h *Handler) storeSessionData(session *auth.PlayerSession, data SessionTracker) {
 	// Store session tracking data in PlayerSession (we could extend the model later)
 	// For now, we'll calculate it on-demand in ExitZone
 }
@@ -155,8 +155,8 @@ func (h *Handler) formatTimeAgo(t time.Time) string {
 }
 
 // ✅ NEW: Validate session integrity
-func (h *Handler) validateSession(userID uuid.UUID, zoneID string) (*common.PlayerSession, error) {
-	var session common.PlayerSession
+func (h *Handler) validateSession(userID uuid.UUID, zoneID string) (*auth.PlayerSession, error) {
+	var session auth.PlayerSession
 	err := h.db.Preload("Zone").Where("user_id = ? AND current_zone = ?", userID, zoneID).First(&session).Error
 	return &session, err
 }

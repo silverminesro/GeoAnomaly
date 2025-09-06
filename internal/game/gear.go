@@ -1,7 +1,7 @@
 package game
 
 import (
-	"geoanomaly/internal/common"
+	"geoanomaly/internal/gameplay"
 	"geoanomaly/internal/loadout"
 	"time"
 
@@ -24,20 +24,20 @@ func NewGearService(db *gorm.DB) *GearService {
 }
 
 // CreateGearItem vytvorí gear predmet na základe kategórie
-func (gs *GearService) CreateGearItem(categoryID string, userID uuid.UUID) (*common.InventoryItem, error) {
+func (gs *GearService) CreateGearItem(categoryID string, userID uuid.UUID) (*gameplay.InventoryItem, error) {
 	// Najdi kategóriu gearu
-	var category common.GearCategory
+	var category gameplay.GearCategory
 	if err := gs.db.Where("id = ? AND is_active = ?", categoryID, true).First(&category).Error; err != nil {
 		return nil, err
 	}
 
 	// Vytvor inventory item
-	inventoryItem := common.InventoryItem{
+	inventoryItem := gameplay.InventoryItem{
 		UserID:   userID,
 		ItemType: "gear",
 		ItemID:   uuid.New(), // Unikátne ID pre tento konkrétny predmet
 		Quantity: 1,
-		Properties: common.JSONB{
+		Properties: gameplay.JSONB{
 			"name":               category.Name,
 			"description":        category.Description,
 			"slot":               category.SlotID,
@@ -64,14 +64,14 @@ func (gs *GearService) CreateGearItem(categoryID string, userID uuid.UUID) (*com
 }
 
 // CollectGearFromZone zozbiera gear zo zóny a pridá ho do inventára
-func (gs *GearService) CollectGearFromZone(zoneID uuid.UUID, userID uuid.UUID, userTier int) ([]common.InventoryItem, error) {
+func (gs *GearService) CollectGearFromZone(zoneID uuid.UUID, userID uuid.UUID, userTier int) ([]gameplay.InventoryItem, error) {
 	// Najdi gear v zóne
-	var zoneGear []common.Gear
+	var zoneGear []gameplay.Gear
 	if err := gs.db.Where("zone_id = ? AND is_active = ?", zoneID, true).Find(&zoneGear).Error; err != nil {
 		return nil, err
 	}
 
-	var collectedItems []common.InventoryItem
+	var collectedItems []gameplay.InventoryItem
 
 	for _, gear := range zoneGear {
 		// Skontroluj tier requirements
@@ -85,12 +85,12 @@ func (gs *GearService) CollectGearFromZone(zoneID uuid.UUID, userID uuid.UUID, u
 		}
 
 		// Vytvor inventory item
-		inventoryItem := common.InventoryItem{
+		inventoryItem := gameplay.InventoryItem{
 			UserID:   userID,
 			ItemType: "gear",
 			ItemID:   uuid.New(),
 			Quantity: 1,
-			Properties: common.JSONB{
+			Properties: gameplay.JSONB{
 				"name":               gear.Name,
 				"type":               gear.Type,
 				"level":              gear.Level,
@@ -120,7 +120,7 @@ func (gs *GearService) CollectGearFromZone(zoneID uuid.UUID, userID uuid.UUID, u
 }
 
 // GetAvailableGear vráti dostupné gear kategórie pre používateľa
-func (gs *GearService) GetAvailableGear(userTier int, biome string) ([]common.GearCategory, error) {
+func (gs *GearService) GetAvailableGear(userTier int, biome string) ([]gameplay.GearCategory, error) {
 	query := gs.db.Where("is_active = ?", true)
 
 	// Filtruj podľa tier requirements
@@ -131,13 +131,13 @@ func (gs *GearService) GetAvailableGear(userTier int, biome string) ([]common.Ge
 		query = query.Where("(biome = ? OR biome = 'all')", biome)
 	}
 
-	var categories []common.GearCategory
+	var categories []gameplay.GearCategory
 	err := query.Order("level ASC, name ASC").Find(&categories).Error
 	return categories, err
 }
 
 // GetAvailableGearInZones vráti gear ktorý je dostupný v zónach pre daný tier a biome
-func (gs *GearService) GetAvailableGearInZones(userTier int, biome string) ([]common.Gear, error) {
+func (gs *GearService) GetAvailableGearInZones(userTier int, biome string) ([]gameplay.Gear, error) {
 	// Namiesto hľadania v gear tabuľke, vytvoríme gear objekty z kategórií
 	// ktoré sa môžu spawnovať v zónach
 	categories, err := gs.GetAvailableGear(userTier, biome)
@@ -145,11 +145,11 @@ func (gs *GearService) GetAvailableGearInZones(userTier int, biome string) ([]co
 		return nil, err
 	}
 
-	var gear []common.Gear
+	var gear []gameplay.Gear
 	for _, category := range categories {
 		// Vytvor gear objekt z kategórie
-		gearObj := common.Gear{
-			BaseModel: common.BaseModel{ID: uuid.New()},
+		gearObj := gameplay.Gear{
+			BaseModel: gameplay.BaseModel{ID: uuid.New()},
 			Name:      category.Name,
 			Type:      category.ID, // Použijeme ID kategórie ako type
 			Level:     category.Level,
@@ -165,7 +165,7 @@ func (gs *GearService) GetAvailableGearInZones(userTier int, biome string) ([]co
 // EquipGear vybaví gear predmet na hráča
 func (gs *GearService) EquipGear(inventoryItemID uuid.UUID, userID uuid.UUID) error {
 	// Najdi inventory item
-	var inventoryItem common.InventoryItem
+	var inventoryItem gameplay.InventoryItem
 	if err := gs.db.Where("id = ? AND user_id = ? AND item_type = ?", inventoryItemID, userID, "gear").First(&inventoryItem).Error; err != nil {
 		return err
 	}
@@ -241,7 +241,7 @@ func GetGearDisplayName(gearType string) string {
 }
 
 // Helper funkcie
-func (gs *GearService) canCollectGear(gear common.Gear, userTier int) bool {
+func (gs *GearService) canCollectGear(gear gameplay.Gear, userTier int) bool {
 	maxLevel := gs.getMaxGearLevelForTier(userTier)
 	return gear.Level <= maxLevel
 }
@@ -360,8 +360,8 @@ func (gs *GearService) calculateResistance(level int, enemyType string) int {
 }
 
 // FilterGearByTier filtruje gear podľa tier requirements
-func (gs *GearService) FilterGearByTier(gear []common.Gear, userTier int) []common.Gear {
-	var filtered []common.Gear
+func (gs *GearService) FilterGearByTier(gear []gameplay.Gear, userTier int) []gameplay.Gear {
+	var filtered []gameplay.Gear
 	for _, g := range gear {
 		// Check tier requirements
 		if !gs.canCollectGear(g, userTier) {
@@ -384,13 +384,13 @@ func (gs *GearService) FilterGearByTier(gear []common.Gear, userTier int) []comm
 func GetGearImageFilename(gearType string) string {
 	imageMap := map[string]string{
 		// Head gear
-		"tactical_cap":     "tactical_cap.jpg",
-		"military_helmet":  "military_helmet.jpg",
-		"hazmat_hood":      "hazmat_hood.jpg",
+		"tactical_cap":    "tactical_cap.jpg",
+		"military_helmet": "military_helmet.jpg",
+		"hazmat_hood":     "hazmat_hood.jpg",
 
 		// Face gear
-		"sunglasses":       "sunglasses.jpg",
-		"gas_mask":         "gas_mask.jpg",
+		"sunglasses": "sunglasses.jpg",
+		"gas_mask":   "gas_mask.jpg",
 
 		// Body gear
 		"leather_jacket":   "leather_jacket.jpg",
@@ -400,19 +400,19 @@ func GetGearImageFilename(gearType string) string {
 		"hazmat_suit":      "hazmat_suit.jpg",
 
 		// Hands gear
-		"combat_gloves":    "combat_gloves.jpg",
-		"tactical_gloves":  "tactical_gloves.jpg",
-		"hazmat_gloves":    "hazmat_gloves.jpg",
+		"combat_gloves":   "combat_gloves.jpg",
+		"tactical_gloves": "tactical_gloves.jpg",
+		"hazmat_gloves":   "hazmat_gloves.jpg",
 
 		// Legs gear
-		"combat_pants":     "combat_pants.jpg",
-		"tactical_pants":   "tactical_pants.jpg",
-		"hazmat_pants":     "hazmat_pants.jpg",
+		"combat_pants":   "combat_pants.jpg",
+		"tactical_pants": "tactical_pants.jpg",
+		"hazmat_pants":   "hazmat_pants.jpg",
 
 		// Feet gear
-		"combat_boots":     "combat_boots.jpg",
-		"tactical_boots":   "tactical_boots.jpg",
-		"hazmat_boots":     "hazmat_boots.jpg",
+		"combat_boots":   "combat_boots.jpg",
+		"tactical_boots": "tactical_boots.jpg",
+		"hazmat_boots":   "hazmat_boots.jpg",
 
 		// Scanner gear
 		"basic_scanner":    "basic_scanner.jpg",

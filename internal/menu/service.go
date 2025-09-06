@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"geoanomaly/internal/common"
+	"geoanomaly/internal/gameplay"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -257,7 +258,7 @@ func (s *Service) PurchaseMarketItem(userID uuid.UUID, itemID uuid.UUID, quantit
 		}
 
 		// ✅ PRIDANÉ: Pridaj predmet do inventára a skopíruj vlastnosti z MarketItem.Properties
-		baseProperties := common.JSONB{
+		baseProperties := gameplay.JSONB{
 			"name":           item.Name,
 			"type":           item.Type,
 			"category":       item.Category,
@@ -288,7 +289,7 @@ func (s *Service) PurchaseMarketItem(userID uuid.UUID, itemID uuid.UUID, quantit
 			inventoryItemType = "gear"
 		}
 
-		inventoryItem := common.InventoryItem{
+		inventoryItem := gameplay.InventoryItem{
 			UserID:     userID,
 			ItemType:   inventoryItemType,
 			ItemID:     item.ID,
@@ -390,7 +391,7 @@ func (s *Service) PurchaseEssencePackage(userID uuid.UUID, packageID uuid.UUID, 
 
 // Item selling (converting inventory items to credits)
 func (s *Service) SellInventoryItem(userID uuid.UUID, inventoryItemID uuid.UUID) error {
-	var inventoryItem common.InventoryItem
+	var inventoryItem gameplay.InventoryItem
 	err := s.db.First(&inventoryItem, inventoryItemID).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -404,7 +405,7 @@ func (s *Service) SellInventoryItem(userID uuid.UUID, inventoryItemID uuid.UUID)
 	}
 
 	// ✅ OPRAVENÉ: Skontroluj či je item vybavený v loadoute
-	var loadoutItem common.LoadoutItem
+	var loadoutItem gameplay.LoadoutItem
 	err = s.db.Where("user_id = ? AND item_id = ?", userID, inventoryItem.ID).First(&loadoutItem).Error
 	if err == nil {
 		// Item je vybavený v loadoute
@@ -433,8 +434,8 @@ func (s *Service) SellInventoryItem(userID uuid.UUID, inventoryItemID uuid.UUID)
 }
 
 // Helper methods
-func (s *Service) getUser(userID uuid.UUID) (*common.User, error) {
-	var user common.User
+func (s *Service) getUser(userID uuid.UUID) (*User, error) {
+	var user User
 	err := s.db.First(&user, userID).Error
 	if err != nil {
 		return nil, err
@@ -442,11 +443,11 @@ func (s *Service) getUser(userID uuid.UUID) (*common.User, error) {
 	return &user, nil
 }
 
-func (s *Service) canUserAccessItem(user *common.User, item *MarketItem) bool {
+func (s *Service) canUserAccessItem(user *User, item *MarketItem) bool {
 	return user.Tier >= item.TierRequired && user.Level >= item.LevelRequired
 }
 
-func (s *Service) calculateSellPrice(item *common.InventoryItem) int {
+func (s *Service) calculateSellPrice(item *gameplay.InventoryItem) int {
 	// Base prices for different item types
 	basePrices := map[string]int{
 		"artifact": 100,
@@ -517,7 +518,7 @@ type UserTierPurchase struct {
 	Properties      common.JSONB `json:"properties,omitempty" gorm:"type:jsonb;default:'{}'::jsonb"`
 
 	// Relationships
-	User        *common.User `json:"user,omitempty" gorm:"foreignKey:UserID"`
+	User        *User        `json:"user,omitempty" gorm:"foreignKey:UserID"`
 	Transaction *Transaction `json:"transaction,omitempty" gorm:"foreignKey:TransactionID"`
 }
 
@@ -581,7 +582,7 @@ func (s *Service) PurchaseTierPackage(userID uuid.UUID, tierLevel int, durationM
 		}
 
 		// Update user tier and expiration (používa existujúce polia!)
-		if err := tx.Model(&common.User{}).
+		if err := tx.Model(&User{}).
 			Where("id = ?", userID).
 			Updates(map[string]interface{}{
 				"tier":         tierLevel,
@@ -607,7 +608,7 @@ func (s *Service) GetUserTierPurchases(userID uuid.UUID, limit int) ([]UserTierP
 
 // Check and reset expired tier for a user
 func (s *Service) CheckAndResetExpiredTier(userID uuid.UUID) error {
-	var user common.User
+	var user User
 	err := s.db.First(&user, userID).Error
 	if err != nil {
 		return err
@@ -616,7 +617,7 @@ func (s *Service) CheckAndResetExpiredTier(userID uuid.UUID) error {
 	// Ak má tier a je expirovaný
 	if user.Tier > 0 && user.TierExpires != nil && user.TierExpires.Before(time.Now()) {
 		// Reset na tier 0
-		return s.db.Model(&common.User{}).
+		return s.db.Model(&User{}).
 			Where("id = ?", userID).
 			Updates(map[string]interface{}{
 				"tier":         0,
@@ -633,7 +634,7 @@ func (s *Service) CheckAndResetAllExpiredTiers() (int, error) {
 
 	err := s.db.Transaction(func(tx *gorm.DB) error {
 		// Nájdeme všetkých userov s expirovaným tier
-		var users []common.User
+		var users []User
 		err := tx.Where("tier > 0 AND tier_expires < ?", time.Now()).Find(&users).Error
 		if err != nil {
 			return err
@@ -643,7 +644,7 @@ func (s *Service) CheckAndResetAllExpiredTiers() (int, error) {
 
 		// Reset na tier 0
 		if count > 0 {
-			if err := tx.Model(&common.User{}).
+			if err := tx.Model(&User{}).
 				Where("tier > 0 AND tier_expires < ?", time.Now()).
 				Updates(map[string]interface{}{
 					"tier":         0,

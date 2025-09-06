@@ -1,7 +1,9 @@
 package admin
 
 import (
+	"geoanomaly/internal/auth"
 	"geoanomaly/internal/common"
+	"geoanomaly/internal/gameplay"
 	"net/http"
 
 	"geoanomaly/internal/game"
@@ -48,15 +50,19 @@ func (h *Handler) CreateEventZone(c *gin.Context) {
 		return
 	}
 
-	zone := common.Zone{
-		BaseModel:    common.BaseModel{ID: uuid.New()},
-		Name:         req.Name,
-		Description:  req.Description,
-		Location:     req.Location,
+	zone := gameplay.Zone{
+		BaseModel:   gameplay.BaseModel{ID: uuid.New()},
+		Name:        req.Name,
+		Description: req.Description,
+		Location: gameplay.Location{
+			Latitude:  req.Location.Latitude,
+			Longitude: req.Location.Longitude,
+			Timestamp: req.Location.Timestamp,
+		},
 		RadiusMeters: req.RadiusMeters,
 		TierRequired: req.TierRequired,
 		ZoneType:     "event",
-		Properties: common.JSONB{
+		Properties: gameplay.JSONB{
 			"event_type": req.EventType,
 			"created_by": "admin",
 			"permanent":  req.Permanent,
@@ -128,7 +134,7 @@ func (h *Handler) AddInventoryItem(c *gin.Context) {
 	}
 
 	// Check if user exists
-	var user common.User
+	var user auth.User
 	if err := h.db.First(&user, "id = ?", userUUID).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
 		return

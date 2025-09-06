@@ -8,6 +8,20 @@ import (
 	"github.com/google/uuid"
 )
 
+// Local User type to avoid import cycles
+type User struct {
+	ID          uuid.UUID  `json:"id" gorm:"type:uuid;primaryKey"`
+	Username    string     `json:"username"`
+	Email       string     `json:"email"`
+	Tier        int        `json:"tier"`
+	Level       int        `json:"level"`
+	TierExpires *time.Time `json:"tier_expires"`
+}
+
+func (User) TableName() string {
+	return "auth.users"
+}
+
 // Currency types
 const (
 	CurrencyCredits = "credits"
@@ -32,7 +46,7 @@ type Currency struct {
 	LastUpdated time.Time `json:"last_updated" gorm:"autoUpdateTime"`
 
 	// Relationships
-	User *common.User `json:"user,omitempty" gorm:"foreignKey:UserID"`
+	User *User `json:"user,omitempty" gorm:"foreignKey:UserID"`
 }
 
 // Transaction model
@@ -50,7 +64,7 @@ type Transaction struct {
 	ReferenceID   *uuid.UUID `json:"reference_id,omitempty" gorm:"index"` // For linking to other transactions
 
 	// Relationships
-	User *common.User `json:"user,omitempty" gorm:"foreignKey:UserID"`
+	User *User `json:"user,omitempty" gorm:"foreignKey:UserID"`
 }
 
 // MarketItem model
@@ -100,7 +114,7 @@ type UserPurchase struct {
 	TransactionID uuid.UUID `json:"transaction_id" gorm:"not null;index"`
 
 	// Relationships
-	User        *common.User `json:"user,omitempty" gorm:"foreignKey:UserID"`
+	User        *User        `json:"user,omitempty" gorm:"foreignKey:UserID"`
 	MarketItem  *MarketItem  `json:"market_item,omitempty" gorm:"foreignKey:MarketItemID"`
 	Transaction *Transaction `json:"transaction,omitempty" gorm:"foreignKey:TransactionID"`
 }
@@ -151,7 +165,7 @@ type UserEssencePurchase struct {
 	PaymentReference string `json:"payment_reference,omitempty"`
 
 	// Relationships
-	User           *common.User    `json:"user,omitempty" gorm:"foreignKey:UserID"`
+	User           *User           `json:"user,omitempty" gorm:"foreignKey:UserID"`
 	EssencePackage *EssencePackage `json:"essence_package,omitempty" gorm:"foreignKey:EssencePackageID"`
 	Transaction    *Transaction    `json:"transaction,omitempty" gorm:"foreignKey:TransactionID"`
 }

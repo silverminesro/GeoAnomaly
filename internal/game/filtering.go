@@ -4,14 +4,14 @@ import (
 	"fmt"
 	"log"
 
-	"geoanomaly/internal/common"
+	"geoanomaly/internal/gameplay"
 	"geoanomaly/internal/scanner"
 
 	"github.com/google/uuid"
 )
 
 // Main filtering functions that combine artifact and gear filtering
-func (h *Handler) addDistanceToItems(artifacts []common.Artifact, playerLat, playerLng float64) []map[string]interface{} {
+func (h *Handler) addDistanceToItems(artifacts []gameplay.Artifact, playerLat, playerLng float64) []map[string]interface{} {
 	var result []map[string]interface{}
 
 	for _, artifact := range artifacts {
@@ -35,7 +35,7 @@ func (h *Handler) addDistanceToItems(artifacts []common.Artifact, playerLat, pla
 	return result
 }
 
-func (h *Handler) addDistanceToGear(gear []common.Gear, playerLat, playerLng float64) []map[string]interface{} {
+func (h *Handler) addDistanceToGear(gear []gameplay.Gear, playerLat, playerLng float64) []map[string]interface{} {
 	var result []map[string]interface{}
 
 	for _, g := range gear {
@@ -63,7 +63,7 @@ func (h *Handler) addDistanceToGear(gear []common.Gear, playerLat, playerLng flo
 func (h *Handler) CheckUserCanCollectItem(userTier int, itemType, itemID string) (bool, string) {
 	switch itemType {
 	case "artifact":
-		var artifact common.Artifact
+		var artifact gameplay.Artifact
 		if err := h.db.First(&artifact, "id = ?", itemID).Error; err != nil {
 			return false, "Artifact not found"
 		}
@@ -82,7 +82,7 @@ func (h *Handler) CheckUserCanCollectItem(userTier int, itemType, itemID string)
 		return true, "OK"
 
 	case "gear":
-		var gear common.Gear
+		var gear gameplay.Gear
 		if err := h.db.First(&gear, "id = ?", itemID).Error; err != nil {
 			return false, "Gear not found"
 		}
@@ -123,7 +123,7 @@ func (h *Handler) CheckScannerCanCollectItem(userID uuid.UUID, itemType, itemID 
 	var itemRarity string
 	switch itemType {
 	case "artifact":
-		var artifact common.Artifact
+		var artifact gameplay.Artifact
 		if err := h.db.First(&artifact, "id = ?", itemID).Error; err != nil {
 			return false, "Item not found"
 		}
