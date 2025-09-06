@@ -95,23 +95,21 @@ func (h *Handler) Scan(c *gin.Context) {
 
 // ✅ NOVÉ: updatePlayerLocation - aktualizuje polohu v player_sessions
 func (h *Handler) updatePlayerLocation(userID uuid.UUID, latitude, longitude float64) {
-	// Aktualizuj player session s novou polohou
-	session := struct {
-		UserID                uuid.UUID
-		LastSeen              time.Time
-		IsOnline              bool
-		LastLocationLatitude  float64
-		LastLocationLongitude float64
-	}{
-		UserID:                userID,
-		LastSeen:              time.Now(),
-		IsOnline:              true,
-		LastLocationLatitude:  latitude,
-		LastLocationLongitude: longitude,
-	}
+	// Upsert player session using direct SQL to avoid import cycle
+	query := `
+		INSERT INTO auth.player_sessions (user_id, last_seen, is_online, last_location_latitude, last_location_longitude, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		ON CONFLICT (user_id) 
+		DO UPDATE SET 
+			last_seen = EXCLUDED.last_seen,
+			is_online = EXCLUDED.is_online,
+			last_location_latitude = EXCLUDED.last_location_latitude,
+			last_location_longitude = EXCLUDED.last_location_longitude,
+			updated_at = EXCLUDED.updated_at
+	`
 
-	// Upsert player session
-	if err := h.db.Where("user_id = ?", userID).Assign(session).FirstOrCreate(&session).Error; err != nil {
+	now := time.Now()
+	if err := h.db.Exec(query, userID, now, true, latitude, longitude, now, now).Error; err != nil {
 		log.Printf("❌ Failed to update player location for user %s: %v", userID, err)
 	} else {
 		log.Printf("📍 Player location updated for user %s: [%.6f, %.6f]", userID, latitude, longitude)
