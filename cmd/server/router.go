@@ -67,8 +67,11 @@ func setupRoutes(db *gorm.DB, redisClient *redis.Client, r2Client *media.R2Clien
 
 	adminHandler := admin.NewHandler(db, nil)
 
-	// Scanner rate limiter temporarily disabled due to import cycle
+	// Scanner rate limiter – zapne sa len ak máme Redis
 	var scannerRateLimiter *middleware.ScannerRateLimiter
+	if redisClient != nil {
+		scannerRateLimiter = middleware.NewScannerRateLimiter(redisClient, db)
+	}
 
 	// Initialize media service and handler
 	var mediaHandler *media.Handler
