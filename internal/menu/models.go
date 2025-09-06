@@ -222,25 +222,25 @@ func (m *MarketItem) CanAffordWithEssence(userEssence int) bool {
 
 // Table name methods
 func (Currency) TableName() string {
-	return "currencies"
+	return "market.currencies"
 }
 
 func (Transaction) TableName() string {
-	return "transactions"
+	return "market.transactions"
 }
 
 func (MarketItem) TableName() string {
-	return "market_items"
+	return "market.market_items"
 }
 
 func (UserPurchase) TableName() string {
-	return "user_purchases"
+	return "market.user_purchases"
 }
 
 func (EssencePackage) TableName() string {
-	return "essence_packages"
+	return "market.essence_packages"
 }
 
 func (UserEssencePurchase) TableName() string {
-	return "user_essence_purchases"
+	return "market.user_essence_purchases"
 }
