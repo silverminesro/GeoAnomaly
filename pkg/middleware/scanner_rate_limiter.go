@@ -7,29 +7,23 @@ import (
 	"strconv"
 	"time"
 
+	"geoanomaly/internal/scanner"
+
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
 )
 
-// ScannerService interface to avoid import cycle
-type ScannerService interface {
-	GetOrCreateScannerInstance(userID uuid.UUID) (interface{}, bool, error)
-	CalculateScannerStats(instance interface{}) (interface{}, error)
-}
-
 type ScannerRateLimiter struct {
-	client         *redis.Client
-	db             *gorm.DB
-	scannerService ScannerService
+	client *redis.Client
+	db     *gorm.DB
 }
 
-func NewScannerRateLimiter(client *redis.Client, db *gorm.DB, scannerService ScannerService) *ScannerRateLimiter {
+func NewScannerRateLimiter(client *redis.Client, db *gorm.DB) *ScannerRateLimiter {
 	return &ScannerRateLimiter{
-		client:         client,
-		db:             db,
-		scannerService: scannerService,
+		client: client,
+		db:     db,
 	}
 }
 
@@ -45,7 +39,8 @@ func (srl *ScannerRateLimiter) ScannerRateLimit() gin.HandlerFunc {
 		}
 
 		// Získaj scanner inštanciu
-		instance, _, err := srl.scannerService.GetOrCreateScannerInstance(userID.(uuid.UUID))
+		scannerService := scanner.NewService(srl.db, srl.client)
+		instance, _, err := scannerService.GetOrCreateScannerInstance(userID.(uuid.UUID))
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get scanner instance"})
 			c.Abort()
@@ -53,7 +48,7 @@ func (srl *ScannerRateLimiter) ScannerRateLimit() gin.HandlerFunc {
 		}
 
 		// Vypočítať scanner stats
-		stats, err := srl.scannerService.CalculateScannerStats(instance)
+		stats, err := scannerService.CalculateScannerStats(instance)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to calculate scanner stats"})
 			c.Abort()
@@ -61,20 +56,7 @@ func (srl *ScannerRateLimiter) ScannerRateLimit() gin.HandlerFunc {
 		}
 
 		// Vypočítať rate limit založený na scanner polling rate
-		// Type assert stats to get ServerPollHz
-		statsMap, ok := stats.(map[string]interface{})
-		if !ok {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Invalid scanner stats format"})
-			c.Abort()
-			return
-		}
-
-		serverPollHz, ok := statsMap["server_poll_hz"].(float64)
-		if !ok {
-			serverPollHz = 1.0 // Default value
-		}
-
-		maxRequestsPerMinute := int(serverPollHz * 60) // Konvertuj Hz na requests za minútu
+		maxRequestsPerMinute := int(stats.ServerPollHz * 60) // Konvertuj Hz na requests za minútu
 
 		// Minimum 60 requests za minútu, maximum 300
 		if maxRequestsPerMinute < 60 {
@@ -93,12 +75,12 @@ func (srl *ScannerRateLimiter) ScannerRateLimit() gin.HandlerFunc {
 			c.Header("X-RateLimit-Limit", strconv.Itoa(maxRequestsPerMinute))
 			c.Header("X-RateLimit-Remaining", "0")
 			c.Header("X-RateLimit-Reset", strconv.FormatInt(nextRequestTime.Unix(), 10))
-			c.Header("X-Scanner-PollHz", fmt.Sprintf("%.2f", serverPollHz))
+			c.Header("X-Scanner-PollHz", fmt.Sprintf("%.2f", stats.ServerPollHz))
 
 			c.JSON(http.StatusTooManyRequests, gin.H{
 				"error": "Scanner rate limit exceeded",
 				"details": gin.H{
-					"scanner_poll_hz":      serverPollHz,
+					"scanner_poll_hz":      stats.ServerPollHz,
 					"max_requests_per_min": maxRequestsPerMinute,
 					"wait_time_seconds":    int(waitTime.Seconds()),
 					"next_request_at":      nextRequestTime.Unix(),
@@ -113,7 +95,7 @@ func (srl *ScannerRateLimiter) ScannerRateLimit() gin.HandlerFunc {
 		remaining := srl.getRemainingRequests(userID.(uuid.UUID).String(), maxRequestsPerMinute)
 		c.Header("X-RateLimit-Limit", strconv.Itoa(maxRequestsPerMinute))
 		c.Header("X-RateLimit-Remaining", strconv.Itoa(remaining))
-		c.Header("X-Scanner-PollHz", fmt.Sprintf("%.2f", serverPollHz))
+		c.Header("X-Scanner-PollHz", fmt.Sprintf("%.2f", stats.ServerPollHz))
 
 		c.Next()
 	}
