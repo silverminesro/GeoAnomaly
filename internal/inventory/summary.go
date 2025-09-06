@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"time"
 
+	"geoanomaly/internal/gameplay"
+
 	"github.com/gin-gonic/gin"
 )
 
@@ -26,8 +28,8 @@ func (h *Handler) GetInventorySummary(c *gin.Context) {
 
 	// Count by item type - ✅ Use table name explicitly
 	var artifactCount, gearCount int64
-	h.db.Table("inventory_items").Where("user_id = ? AND item_type = ? AND deleted_at IS NULL", userID, "artifact").Count(&artifactCount)
-	h.db.Table("inventory_items").Where("user_id = ? AND item_type = ? AND deleted_at IS NULL", userID, "gear").Count(&gearCount)
+	h.db.Model(&gameplay.InventoryItem{}).Where("user_id = ? AND item_type = ? AND deleted_at IS NULL", userID, "artifact").Count(&artifactCount)
+	h.db.Model(&gameplay.InventoryItem{}).Where("user_id = ? AND item_type = ? AND deleted_at IS NULL", userID, "gear").Count(&gearCount)
 
 	fmt.Printf("✅ Summary counts: artifacts=%d, gear=%d\n", artifactCount, gearCount)
 

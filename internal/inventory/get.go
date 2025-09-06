@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"time"
 
+	"geoanomaly/internal/gameplay"
+
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -37,7 +39,7 @@ func (h *Handler) GetInventory(c *gin.Context) {
 	offset := (page - 1) * limit
 
 	// Build query
-	query := h.db.Table("inventory_items").Where("user_id = ? AND deleted_at IS NULL", userID)
+	query := h.db.Model(&gameplay.InventoryItem{}).Where("user_id = ? AND deleted_at IS NULL", userID)
 
 	if itemType != "" {
 		query = query.Where("item_type = ?", itemType)
@@ -128,14 +130,14 @@ func (h *Handler) GetInventory(c *gin.Context) {
 				itemData["image_url"] = fmt.Sprintf("/api/v1/media/gear/%s", gearType)
 			}
 
-					// ✅ OPRAVENÉ: Skontroluj či je item skutočne vybavený v loadoute
-		var isEquipped bool
-		if itemTypeStr == "gear" {
-			// Check if this item is equipped in loadout
-			var loadoutCount int64
-			h.db.Model(&gorm.Model{}).Table("loadout_items").Where("user_id = ? AND item_id = ?", userID, rawItem["id"]).Count(&loadoutCount)
-			isEquipped = loadoutCount > 0
-		}
+			// ✅ OPRAVENÉ: Skontroluj či je item skutočne vybavený v loadoute
+			var isEquipped bool
+			if itemTypeStr == "gear" {
+				// Check if this item is equipped in loadout
+				var loadoutCount int64
+				h.db.Model(&gorm.Model{}).Table("loadout_items").Where("user_id = ? AND item_id = ?", userID, rawItem["id"]).Count(&loadoutCount)
+				isEquipped = loadoutCount > 0
+			}
 			itemData["is_equipped"] = isEquipped
 
 			// Keep existing equipped field from properties for backward compatibility
