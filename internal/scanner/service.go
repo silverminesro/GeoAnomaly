@@ -72,21 +72,37 @@ func (s *Service) resolveScannerCodeFromLoadout(userID uuid.UUID) (string, error
 		return "echovane_mk0", nil // bezpečný fallback
 	}
 
-	// properties skeneru z loadoutu – zvyknú obsahovať "name" a/alebo "model" a často aj "market_item_id"
+	// properties skeneru z loadoutu – zvyknú obsahovať "name", "model" alebo priamo "scanner_code"
 	name := ""
 	model := ""
+	scannerCode := ""
 
 	if slot.Properties != nil {
-		if nameVal, exists := slot.Properties["name"]; exists {
-			if nameStr, ok := nameVal.(string); ok {
-				name = strings.ToLower(strings.TrimSpace(nameStr))
+		// Najprv skús priamo scanner_code
+		if codeVal, exists := slot.Properties["scanner_code"]; exists {
+			if codeStr, ok := codeVal.(string); ok {
+				scannerCode = strings.ToLower(strings.TrimSpace(codeStr))
 			}
 		}
-		if modelVal, exists := slot.Properties["model"]; exists {
-			if modelStr, ok := modelVal.(string); ok {
-				model = strings.ToLower(strings.TrimSpace(modelStr))
+		
+		// Ak nie je scanner_code, skús name a model
+		if scannerCode == "" {
+			if nameVal, exists := slot.Properties["name"]; exists {
+				if nameStr, ok := nameVal.(string); ok {
+					name = strings.ToLower(strings.TrimSpace(nameStr))
+				}
+			}
+			if modelVal, exists := slot.Properties["model"]; exists {
+				if modelStr, ok := modelVal.(string); ok {
+					model = strings.ToLower(strings.TrimSpace(modelStr))
+				}
 			}
 		}
+	}
+
+	// Ak máme priamy scanner_code, použij ho
+	if scannerCode != "" {
+		return scannerCode, nil
 	}
 
 	// Dočasná mapka názov→kód (kým nebude priamy market ID mapping)
