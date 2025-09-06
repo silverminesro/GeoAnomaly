@@ -13,7 +13,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	"gorm.io/gorm"
 )
 
 // GET /api/v1/inventory/items
@@ -135,7 +134,7 @@ func (h *Handler) GetInventory(c *gin.Context) {
 			if itemTypeStr == "gear" {
 				// Check if this item is equipped in loadout
 				var loadoutCount int64
-				h.db.Model(&gorm.Model{}).Table("loadout_items").Where("user_id = ? AND item_id = ?", userID, rawItem["id"]).Count(&loadoutCount)
+				h.db.Model(&gameplay.LoadoutItem{}).Where("user_id = ? AND item_id = ?", userID, rawItem["id"]).Count(&loadoutCount)
 				isEquipped = loadoutCount > 0
 			}
 			itemData["is_equipped"] = isEquipped
@@ -205,7 +204,7 @@ func (h *Handler) GetItemDetail(c *gin.Context) {
 		SELECT 
 			id, user_id, item_type, item_id, quantity, 
 			properties::text, created_at, updated_at, deleted_at
-		FROM inventory_items 
+		FROM gameplay.inventory_items 
 		WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL
 	`
 

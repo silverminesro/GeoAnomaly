@@ -40,7 +40,7 @@ func (h *Handler) GetInventorySummary(c *gin.Context) {
 		SELECT 
 			properties->>'rarity' as rarity,
 			COUNT(*) as count
-		FROM inventory_items 
+		FROM gameplay.inventory_items 
 		WHERE user_id = ? AND deleted_at IS NULL 
 		AND properties->>'rarity' IS NOT NULL
 		GROUP BY properties->>'rarity'
@@ -66,7 +66,7 @@ func (h *Handler) GetInventorySummary(c *gin.Context) {
 		SELECT 
 			properties->>'biome' as biome,
 			COUNT(*) as count
-		FROM inventory_items 
+		FROM gameplay.inventory_items 
 		WHERE user_id = ? AND deleted_at IS NULL 
 		AND properties->>'biome' IS NOT NULL
 		GROUP BY properties->>'biome'
