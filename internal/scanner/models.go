@@ -53,7 +53,7 @@ type ScannerCatalog struct {
 
 // TableName - explicitne špecifikuje názov tabuľky pre GORM
 func (ScannerCatalog) TableName() string {
-	return "scanner_catalog"
+	return "gameplay.scanner_catalog"
 }
 
 // ScannerCaps - nová štruktúra scanner capabilities podľa V-HUD systému
@@ -138,7 +138,7 @@ type ModuleCatalog struct {
 
 // TableName - explicitne špecifikuje názov tabuľky pre GORM
 func (ModuleCatalog) TableName() string {
-	return "module_catalog"
+	return "gameplay.module_catalog"
 }
 
 // ModuleEffects - účinky modulu (zjednodušené)
@@ -179,7 +179,7 @@ type PowerCellCatalog struct {
 
 // TableName - explicitne špecifikuje názov tabuľky pre GORM
 func (PowerCellCatalog) TableName() string {
-	return "power_cells_catalog"
+	return "gameplay.power_cells_catalog"
 }
 
 // CraftRecipe - recept na craftovanie
@@ -222,7 +222,7 @@ type ScannerInstance struct {
 
 // TableName - explicitne špecifikuje názov tabuľky pre GORM
 func (ScannerInstance) TableName() string {
-	return "scanner_instances"
+	return "gameplay.scanner_instances"
 }
 
 // ScannerModule - inštalovaný modul
@@ -238,7 +238,7 @@ type ScannerModule struct {
 
 // TableName - explicitne špecifikuje názov tabuľky pre GORM
 func (ScannerModule) TableName() string {
-	return "scanner_modules_installed"
+	return "gameplay.scanner_modules_installed"
 }
 
 // ScannerStats - efektívne stats scanner (zjednodušené)
