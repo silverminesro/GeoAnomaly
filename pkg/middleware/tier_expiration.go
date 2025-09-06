@@ -3,11 +3,15 @@ package middleware
 import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	"geoanomaly/internal/menu"
 )
 
+// TierService interface to avoid import cycle
+type TierService interface {
+	CheckAndResetExpiredTier(userID uuid.UUID) error
+}
+
 // TierExpirationMiddleware checks and resets expired tiers for authenticated users
-func TierExpirationMiddleware(menuService *menu.Service) gin.HandlerFunc {
+func TierExpirationMiddleware(tierService TierService) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// Get user ID from context (set by JWT middleware)
 		userIDInterface, exists := c.Get("user_id")
@@ -25,7 +29,7 @@ func TierExpirationMiddleware(menuService *menu.Service) gin.HandlerFunc {
 		}
 
 		// Check and reset expired tier
-		if err := menuService.CheckAndResetExpiredTier(userID); err != nil {
+		if err := tierService.CheckAndResetExpiredTier(userID); err != nil {
 			// Log error but don't block request
 			c.Error(err)
 		}
