@@ -1,8 +1,6 @@
 package laboratory
 
 import (
-	"database/sql/driver"
-	"encoding/json"
 	"fmt"
 	"time"
 
@@ -1089,28 +1087,5 @@ func getCraftingLevel(recipeLevel int) string {
 }
 
 // =============================================
-// 8. JSONB IMPLEMENTATION
+// 8. JSONB IMPLEMENTATION (moved to models.go)
 // =============================================
-
-// Value implements driver.Valuer for JSONB
-func (j JSONB) Value() (driver.Value, error) {
-	if j == nil {
-		return nil, nil
-	}
-	return json.Marshal(j)
-}
-
-// Scan implements sql.Scanner for JSONB
-func (j *JSONB) Scan(value interface{}) error {
-	if value == nil {
-		*j = nil
-		return nil
-	}
-
-	bytes, ok := value.([]byte)
-	if !ok {
-		return fmt.Errorf("cannot scan %T into JSONB", value)
-	}
-
-	return json.Unmarshal(bytes, j)
-}
