@@ -6,15 +6,19 @@ import (
 
 	"geoanomaly/internal/admin"
 	"geoanomaly/internal/auth"
-	"geoanomaly/internal/common"
+	"geoanomaly/internal/battery"
+	"geoanomaly/internal/deployable"
 	"geoanomaly/internal/game"
+	"geoanomaly/internal/gameplay"
 	"geoanomaly/internal/inventory"
+	"geoanomaly/internal/laboratory"
 	"geoanomaly/internal/loadout"
 	"geoanomaly/internal/location"
 	"geoanomaly/internal/media"
 	"geoanomaly/internal/menu"
 	"geoanomaly/internal/scanner"
 	"geoanomaly/internal/user"
+	"geoanomaly/internal/xp"
 	"geoanomaly/pkg/middleware"
 
 	"github.com/gin-gonic/gin"
@@ -47,11 +51,21 @@ func setupRoutes(db *gorm.DB, redisClient *redis.Client, r2Client *media.R2Clien
 	inventoryHandler := inventory.NewHandler(db)
 	menuHandler := menu.NewHandler(db)
 	loadoutHandler := loadout.NewHandler(db)
-	adminHandler := admin.NewHandler(db, nil)
 
 	// Initialize scanner service and handler
 	scannerService := scanner.NewService(db, redisClient)
 	scannerHandler := scanner.NewHandler(scannerService, db)
+
+	// Initialize deployable scanner service and handler
+	deployableService := deployable.NewService(db)
+	deployableHandler := deployable.NewHandler(deployableService)
+
+	// Initialize XP system and laboratory system
+	xpHandler := xp.NewHandler(db)
+	laboratoryService := laboratory.NewService(db, xpHandler)
+	laboratoryHandler := laboratory.NewHandler(laboratoryService)
+
+	adminHandler := admin.NewHandler(db, nil)
 
 	// Initialize scanner rate limiter
 	var scannerRateLimiter *middleware.ScannerRateLimiter
@@ -138,9 +152,9 @@ func setupRoutes(db *gorm.DB, redisClient *redis.Client, r2Client *media.R2Clien
 
 			db.Raw("SELECT COUNT(*) FROM tier_definitions").Scan(&tierCount)
 			db.Raw("SELECT COUNT(*) FROM level_definitions").Scan(&levelCount)
-			db.Model(&common.User{}).Count(&userCount)
-			db.Model(&common.Zone{}).Count(&zoneCount)
-			db.Model(&common.InventoryItem{}).Count(&inventoryCount)
+			db.Model(&auth.User{}).Count(&userCount)
+			db.Model(&gameplay.Zone{}).Count(&zoneCount)
+			db.Model(&gameplay.InventoryItem{}).Count(&inventoryCount)
 
 			c.JSON(200, gin.H{
 				"database": "connected",
@@ -160,7 +174,7 @@ func setupRoutes(db *gorm.DB, redisClient *redis.Client, r2Client *media.R2Clien
 
 		// User test endpoint
 		v1.GET("/users", func(c *gin.Context) {
-			var users []common.User
+			var users []auth.User
 			result := db.Limit(10).Find(&users)
 
 			if result.Error != nil {
@@ -182,7 +196,7 @@ func setupRoutes(db *gorm.DB, redisClient *redis.Client, r2Client *media.R2Clien
 
 		// Zone test endpoint
 		v1.GET("/zones", func(c *gin.Context) {
-			var zones []common.Zone
+			var zones []gameplay.Zone
 			result := db.Limit(10).Find(&zones)
 
 			if result.Error != nil {
@@ -204,7 +218,7 @@ func setupRoutes(db *gorm.DB, redisClient *redis.Client, r2Client *media.R2Clien
 
 		// Inventory test endpoint
 		v1.GET("/inventory-test", func(c *gin.Context) {
-			var inventoryItems []common.InventoryItem
+			var inventoryItems []gameplay.InventoryItem
 			result := db.Limit(10).Find(&inventoryItems)
 
 			if result.Error != nil {
@@ -393,6 +407,73 @@ func setupRoutes(db *gorm.DB, redisClient *redis.Client, r2Client *media.R2Clien
 			scannerRoutes.GET("/zone/:zone_id/secure-data", scannerHandler.GetSecureZoneData)
 			// ✅ REMOVED: scanner claim endpoint - now using CollectItem system
 		}
+
+		// Deployable Scanner routes
+		deployableRoutes := v1.Group("/devices")
+		deployableRoutes.Use(middleware.JWTAuth())
+		{
+			// Device management
+			deployableRoutes.POST("/deploy", deployableHandler.DeployDevice)
+			deployableRoutes.GET("/my", deployableHandler.GetMyDevices)
+			deployableRoutes.GET("/:device_id", deployableHandler.GetDeviceDetails)
+			deployableRoutes.DELETE("/:device_id", deployableHandler.DeleteDevice)
+
+			// Device scanning
+			deployableRoutes.POST("/:device_id/scan", deployableHandler.ScanDevice)
+			deployableRoutes.GET("/:device_id/cooldown", deployableHandler.GetCooldownStatus)
+
+			// Device hacking
+			deployableRoutes.POST("/:device_id/hack", deployableHandler.HackDevice)
+			deployableRoutes.POST("/:device_id/claim", deployableHandler.ClaimDevice)
+
+			// Device discovery
+			deployableRoutes.GET("/nearby", deployableHandler.GetNearbyDevices)
+			deployableRoutes.GET("/abandoned", deployableHandler.GetAbandonedDevices)
+
+			// Map markers
+			deployableRoutes.GET("/map/markers", deployableHandler.GetMapMarkers)
+
+			// Hack tools
+			deployableRoutes.GET("/hack-tools", deployableHandler.GetHackTools)
+			deployableRoutes.POST("/hack-tools/:tool_id/use", deployableHandler.UseHackTool)
+		}
+
+		// Laboratory System Routes
+		laboratoryRoutes := v1.Group("/laboratory")
+		laboratoryRoutes.Use(middleware.JWTAuth())
+		{
+			// Laboratory Management
+			laboratoryRoutes.GET("/status", laboratoryHandler.GetLaboratoryStatus)
+			laboratoryRoutes.POST("/upgrade", laboratoryHandler.UpgradeLaboratory)
+			laboratoryRoutes.POST("/battery/slots/purchase", laboratoryHandler.PurchaseExtraChargingSlot)
+
+			// Laboratory Placement & Map
+			laboratoryRoutes.POST("/place", laboratoryHandler.PlaceLaboratory)
+			laboratoryRoutes.POST("/relocate", laboratoryHandler.RequireLaboratoryPlaced(), laboratoryHandler.RelocateLaboratory)
+			laboratoryRoutes.GET("/relocate/cost", laboratoryHandler.RequireLaboratoryPlaced(), laboratoryHandler.GetRelocationCost)
+			laboratoryRoutes.GET("/nearby", laboratoryHandler.GetNearbyLaboratories)
+
+			// Research System (Level 2+)
+			laboratoryRoutes.POST("/research/start", laboratoryHandler.RequireLaboratoryPlaced(), laboratoryHandler.RequireResearchUnlocked(), laboratoryHandler.StartResearch)
+			laboratoryRoutes.GET("/research/status", laboratoryHandler.RequireLaboratoryPlaced(), laboratoryHandler.RequireResearchUnlocked(), laboratoryHandler.GetResearchStatus)
+			laboratoryRoutes.POST("/research/complete/:id", laboratoryHandler.RequireLaboratoryPlaced(), laboratoryHandler.RequireResearchUnlocked(), laboratoryHandler.CompleteResearch)
+
+			// Crafting System (Level 3+)
+			laboratoryRoutes.POST("/craft/start", laboratoryHandler.RequireLaboratoryPlaced(), laboratoryHandler.RequireCraftingUnlocked(), laboratoryHandler.StartCrafting)
+			laboratoryRoutes.GET("/craft/status", laboratoryHandler.RequireLaboratoryPlaced(), laboratoryHandler.RequireCraftingUnlocked(), laboratoryHandler.GetCraftingStatus)
+			laboratoryRoutes.POST("/craft/complete/:id", laboratoryHandler.RequireLaboratoryPlaced(), laboratoryHandler.RequireCraftingUnlocked(), laboratoryHandler.CompleteCrafting)
+			laboratoryRoutes.GET("/recipes", laboratoryHandler.RequireLaboratoryPlaced(), laboratoryHandler.RequireCraftingUnlocked(), laboratoryHandler.GetCraftingRecipes)
+
+			// Battery Charging (Level 1+)
+			laboratoryRoutes.POST("/battery/charge", laboratoryHandler.RequireLaboratoryPlaced(), laboratoryHandler.StartBatteryCharging)
+			laboratoryRoutes.GET("/battery/charging-status", laboratoryHandler.RequireLaboratoryPlaced(), laboratoryHandler.GetBatteryChargingStatus)
+			laboratoryRoutes.POST("/battery/complete/:id", laboratoryHandler.RequireLaboratoryPlaced(), laboratoryHandler.CompleteBatteryCharging)
+
+			// Task System (Level 1+)
+			laboratoryRoutes.GET("/tasks", laboratoryHandler.RequireLaboratoryPlaced(), laboratoryHandler.GetAvailableTasks)
+			laboratoryRoutes.POST("/tasks/:id/progress", laboratoryHandler.RequireLaboratoryPlaced(), laboratoryHandler.UpdateTaskProgress)
+			laboratoryRoutes.POST("/tasks/:id/claim", laboratoryHandler.RequireLaboratoryPlaced(), laboratoryHandler.ClaimTaskReward)
+		}
 	}
 
 	// ==========================================
@@ -568,9 +649,9 @@ func setupRoutes(db *gorm.DB, redisClient *redis.Client, r2Client *media.R2Clien
 
 		systemRoutes.GET("/stats", func(c *gin.Context) {
 			var userCount, zoneCount, inventoryCount int64
-			db.Model(&common.User{}).Count(&userCount)
-			db.Model(&common.Zone{}).Count(&zoneCount)
-			db.Model(&common.InventoryItem{}).Count(&inventoryCount)
+			db.Model(&auth.User{}).Count(&userCount)
+			db.Model(&gameplay.Zone{}).Count(&zoneCount)
+			db.Model(&gameplay.InventoryItem{}).Count(&inventoryCount)
 
 			c.JSON(200, gin.H{
 				"active_players":  userCount,
@@ -666,6 +747,32 @@ func setupRoutes(db *gorm.DB, redisClient *redis.Client, r2Client *media.R2Clien
 			"security":  "🛡️ monitored",
 		})
 	})
+
+	// Battery Management System routes
+	batteryService := battery.NewService(db)
+	batteryHandler := battery.NewHandler(batteryService)
+	batteryRoutes := router.Group("/api/v1/batteries")
+	{
+		// Battery types and instances
+		batteryRoutes.GET("/types", batteryHandler.GetBatteryTypes)
+		batteryRoutes.GET("/instances", batteryHandler.RequireUserID(), batteryHandler.GetBatteryInstances)
+		batteryRoutes.POST("/purchase", batteryHandler.RequireUserID(), batteryHandler.PurchaseBattery)
+		batteryRoutes.POST("/sell", batteryHandler.RequireUserID(), batteryHandler.SellBattery)
+
+		// Insurance
+		batteryRoutes.POST("/insurance/purchase", batteryHandler.RequireUserID(), batteryHandler.PurchaseInsurance)
+		batteryRoutes.GET("/insurance/claims", batteryHandler.RequireUserID(), batteryHandler.GetInsuranceClaims)
+
+		// Risk assessment and charging
+		batteryRoutes.GET("/:id/risk-assessment", batteryHandler.RequireUserID(), batteryHandler.ValidateBatteryInstanceID(), batteryHandler.GetRiskAssessment)
+		batteryRoutes.POST("/:id/charging-result", batteryHandler.RequireUserID(), batteryHandler.ValidateBatteryInstanceID(), batteryHandler.ProcessChargingResult)
+
+		// Statistics
+		batteryRoutes.GET("/stats", batteryHandler.RequireUserID(), batteryHandler.GetBatteryStats)
+
+		// Health check
+		batteryRoutes.GET("/health", batteryHandler.HealthCheck)
+	}
 
 	// 405 handler
 	router.NoMethod(func(c *gin.Context) {

@@ -10,8 +10,9 @@ import (
 	"syscall"
 	"time"
 
-	"geoanomaly/internal/common"
+	"geoanomaly/internal/auth"
 	"geoanomaly/internal/game"
+	"geoanomaly/internal/gameplay"
 	"geoanomaly/internal/media"
 	"geoanomaly/pkg/middleware"
 
@@ -305,11 +306,11 @@ func checkMigrations(db *gorm.DB) error {
 
 	// Count existing data
 	var zoneCount int64
-	db.Model(&common.Zone{}).Count(&zoneCount)
+	db.Model(&gameplay.Zone{}).Count(&zoneCount)
 	log.Printf("📍 Found %d zones in database", zoneCount)
 
 	var userCount int64
-	db.Model(&common.User{}).Count(&userCount)
+	db.Model(&auth.User{}).Count(&userCount)
 	log.Printf("👤 Found %d users in database", userCount)
 
 	// Check if core tables have data
