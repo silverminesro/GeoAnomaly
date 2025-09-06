@@ -74,7 +74,7 @@ func (h *Handler) GetProfile(c *gin.Context) {
 	cacheKey := "user_profile:" + userID.(uuid.UUID).String()
 
 	var user auth.User
-	if err := h.db.Preload("Inventory").First(&user, "id = ?", userID).Error; err != nil {
+	if err := h.db.First(&user, "id = ?", userID).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
 			return
