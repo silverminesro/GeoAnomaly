@@ -70,7 +70,7 @@ func (srl *ScannerRateLimiter) ScannerRateLimit() gin.HandlerFunc {
 		if !srl.checkScannerRateLimit(userID.(uuid.UUID).String(), maxRequestsPerMinute) {
 			// Vypočítať čas do ďalšieho requestu
 			nextRequestTime := srl.getNextRequestTime(userID.(uuid.UUID).String())
-			waitTime := nextRequestTime.Sub(time.Now())
+			waitTime := time.Until(nextRequestTime)
 
 			c.Header("X-RateLimit-Limit", strconv.Itoa(maxRequestsPerMinute))
 			c.Header("X-RateLimit-Remaining", "0")
