@@ -114,10 +114,32 @@ func (s *Service) ScanDeployableDevice(userID uuid.UUID, deviceID uuid.UUID, req
 		return nil, fmt.Errorf("hráč nemá aktívnu session")
 	}
 
-	// 2. Získať zariadenie
+	// 2. Získať zariadenie (bez owner filtra, iba aktívne)
 	var device DeployedDevice
-	if err := s.db.Where("id = ? AND owner_id = ? AND is_active = true", deviceID, userID).First(&device).Error; err != nil {
+	if err := s.db.Where("id = ? AND is_active = true", deviceID).First(&device).Error; err != nil {
 		return nil, fmt.Errorf("zariadenie nebolo nájdené alebo nie je aktívne")
+	}
+
+	// 2b. Overiť oprávnenie na sken: owner alebo platný záznam v gameplay.device_access
+	if device.OwnerID != userID {
+		var count int64
+		err := s.db.Raw(`
+			SELECT 1
+			FROM gameplay.device_access da
+			WHERE da.device_id = ? AND da.user_id = ?
+			  AND (
+					da.access_level IN ('owner','permanent')
+				 OR (da.access_level = 'temporary' AND da.expires_at IS NOT NULL AND da.expires_at > NOW())
+			  )
+			  AND (
+					da.is_device_disabled = FALSE
+				 OR (da.is_device_disabled = TRUE AND da.disabled_until IS NOT NULL AND da.disabled_until <= NOW())
+			  )
+			LIMIT 1
+		`, deviceID, userID).Count(&count).Error
+		if err != nil || count == 0 {
+			return nil, fmt.Errorf("nemáš prístup na skenovanie tohto zariadenia")
+		}
 	}
 
 	// 3. Vypočítať vzdialenosť medzi hráčom a zariadením
@@ -449,6 +471,7 @@ func (s *Service) GetAbandonedDevicesInRadius(userID uuid.UUID, lat, lng float64
 func (s *Service) validateTierLimits(userID uuid.UUID) error {
 	// TODO: Implement tier validation
 	// Get user tier and check device limits
+	_ = userID // Suppress unused parameter warning
 	return nil
 }
 
@@ -477,11 +500,16 @@ func (s *Service) validateDeploymentDistance(userID uuid.UUID, deviceLat, device
 
 func (s *Service) validateInventoryItems(userID uuid.UUID, deviceID, batteryID uuid.UUID) error {
 	// TODO: Implement inventory validation
+	_ = userID    // Suppress unused parameter warning
+	_ = deviceID  // Suppress unused parameter warning
+	_ = batteryID // Suppress unused parameter warning
 	return nil
 }
 
 func (s *Service) removeFromInventory(userID, itemID uuid.UUID) error {
 	// TODO: Implement inventory removal
+	_ = userID // Suppress unused parameter warning
+	_ = itemID // Suppress unused parameter warning
 	return nil
 }
 
@@ -558,6 +586,7 @@ func (s *Service) getZoneArtifacts(zoneID string) ([]gameplay.Artifact, error) {
 }
 
 func (s *Service) filterArtifactsByScanner(artifacts []gameplay.Artifact, req *DeployableScanRequest, device *DeployedDevice) []DeployableScanResult {
+	_ = req // Suppress unused parameter warning
 	var results []DeployableScanResult
 
 	// Konvertovať scan radius z km na metre (podľa capability zariadenia)
@@ -647,6 +676,7 @@ func (s *Service) performHack(device *DeployedDevice, hackTool *HackTool) bool {
 }
 
 func (s *Service) grantDeviceAccess(hackerID uuid.UUID, deviceID uuid.UUID, hackTool *HackTool) (*HackResponse, error) {
+	_ = hackTool // Suppress unused parameter warning
 	// Získať zariadenie pre kontrolu cooldownu
 	var device DeployedDevice
 	if err := s.db.Where("id = ?", deviceID).First(&device).Error; err != nil {
@@ -697,6 +727,7 @@ func (s *Service) grantDeviceAccess(hackerID uuid.UUID, deviceID uuid.UUID, hack
 }
 
 func (s *Service) claimAbandonedDevice(hackerID uuid.UUID, deviceID uuid.UUID, hackTool *HackTool) (*HackResponse, error) {
+	_ = hackTool // Suppress unused parameter warning
 	var result *HackResponse
 
 	err := s.db.Transaction(func(tx *gorm.DB) error {

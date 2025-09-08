@@ -4,32 +4,33 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"gorm.io/datatypes"
 )
 
 // DeployedDevice reprezentuje zariadenie umiestnené na mape
 type DeployedDevice struct {
-	ID                 uuid.UUID      `json:"id" db:"id" gorm:"primaryKey"`
-	OwnerID            uuid.UUID      `json:"owner_id" db:"owner_id"`
-	DeviceInventoryID  uuid.UUID      `json:"device_inventory_id" db:"device_inventory_id"`   // ID zariadenia z inventára
-	BatteryInventoryID uuid.UUID      `json:"battery_inventory_id" db:"battery_inventory_id"` // ID batérie z inventára
-	Name               string         `json:"name" db:"name"`
-	Latitude           float64        `json:"latitude" db:"latitude"`
-	Longitude          float64        `json:"longitude" db:"longitude"`
-	DeployedAt         time.Time      `json:"deployed_at" db:"deployed_at"`
-	LastScanAt         *time.Time     `json:"last_scan_at" db:"last_scan_at"`
-	LastAccessedAt     *time.Time     `json:"last_accessed_at" db:"last_accessed_at"`
-	IsActive           bool           `json:"is_active" db:"is_active"`
-	BatteryLevel       int            `json:"battery_level" db:"battery_level"` // 0-100%
-	BatteryDepletedAt  *time.Time     `json:"battery_depleted_at" db:"battery_depleted_at"`
-	AbandonedAt        *time.Time     `json:"abandoned_at" db:"abandoned_at"`
-	LastDisabledAt     *time.Time     `json:"last_disabled_at" db:"last_disabled_at"`
-	Status             DeviceStatus   `json:"status" db:"status"`
-	HackResistance     int            `json:"hack_resistance" db:"hack_resistance"`         // 1-10
-	ScanRadiusKm       float64        `json:"scan_radius_km" db:"scan_radius_km"`           // Scanning radius in kilometers
-	MaxRarityDetected  string         `json:"max_rarity_detected" db:"max_rarity_detected"` // Maximum rarity level that can be detected
-	Properties         map[string]any `json:"properties" db:"properties" gorm:"type:jsonb"`
-	CreatedAt          time.Time      `json:"created_at" db:"created_at"`
-	UpdatedAt          time.Time      `json:"updated_at" db:"updated_at"`
+	ID                 uuid.UUID         `json:"id" db:"id" gorm:"primaryKey"`
+	OwnerID            uuid.UUID         `json:"owner_id" db:"owner_id"`
+	DeviceInventoryID  uuid.UUID         `json:"device_inventory_id" db:"device_inventory_id"`   // ID zariadenia z inventára
+	BatteryInventoryID uuid.UUID         `json:"battery_inventory_id" db:"battery_inventory_id"` // ID batérie z inventára
+	Name               string            `json:"name" db:"name"`
+	Latitude           float64           `json:"latitude" db:"latitude"`
+	Longitude          float64           `json:"longitude" db:"longitude"`
+	DeployedAt         time.Time         `json:"deployed_at" db:"deployed_at"`
+	LastScanAt         *time.Time        `json:"last_scan_at" db:"last_scan_at"`
+	LastAccessedAt     *time.Time        `json:"last_accessed_at" db:"last_accessed_at"`
+	IsActive           bool              `json:"is_active" db:"is_active"`
+	BatteryLevel       int               `json:"battery_level" db:"battery_level"` // 0-100%
+	BatteryDepletedAt  *time.Time        `json:"battery_depleted_at" db:"battery_depleted_at"`
+	AbandonedAt        *time.Time        `json:"abandoned_at" db:"abandoned_at"`
+	LastDisabledAt     *time.Time        `json:"last_disabled_at" db:"last_disabled_at"`
+	Status             DeviceStatus      `json:"status" db:"status"`
+	HackResistance     int               `json:"hack_resistance" db:"hack_resistance"`         // 1-10
+	ScanRadiusKm       float64           `json:"scan_radius_km" db:"scan_radius_km"`           // Scanning radius in kilometers
+	MaxRarityDetected  string            `json:"max_rarity_detected" db:"max_rarity_detected"` // Maximum rarity level that can be detected
+	Properties         datatypes.JSONMap `json:"properties" db:"properties" gorm:"type:jsonb"`
+	CreatedAt          time.Time         `json:"created_at" db:"created_at"`
+	UpdatedAt          time.Time         `json:"updated_at" db:"updated_at"`
 }
 
 // TableName - explicitne špecifikuje názov tabuľky pre GORM
@@ -67,15 +68,15 @@ func (DeviceHack) TableName() string {
 
 // HackTool reprezentuje hackovací nástroj v inventári hráča
 type HackTool struct {
-	ID         uuid.UUID      `json:"id" db:"id" gorm:"primaryKey"`
-	UserID     uuid.UUID      `json:"user_id" db:"user_id"`
-	ToolType   string         `json:"tool_type" db:"tool_type"`
-	Name       string         `json:"name" db:"name"`
-	UsesLeft   int            `json:"uses_left" db:"uses_left"`
-	ExpiresAt  *time.Time     `json:"expires_at" db:"expires_at"`
-	Properties map[string]any `json:"properties" db:"properties" gorm:"type:jsonb"`
-	CreatedAt  time.Time      `json:"created_at" db:"created_at"`
-	UpdatedAt  time.Time      `json:"updated_at" db:"updated_at"`
+	ID         uuid.UUID         `json:"id" db:"id" gorm:"primaryKey"`
+	UserID     uuid.UUID         `json:"user_id" db:"user_id"`
+	ToolType   string            `json:"tool_type" db:"tool_type"`
+	Name       string            `json:"name" db:"name"`
+	UsesLeft   int               `json:"uses_left" db:"uses_left"`
+	ExpiresAt  *time.Time        `json:"expires_at" db:"expires_at"`
+	Properties datatypes.JSONMap `json:"properties" db:"properties" gorm:"type:jsonb"`
+	CreatedAt  time.Time         `json:"created_at" db:"created_at"`
+	UpdatedAt  time.Time         `json:"updated_at" db:"updated_at"`
 }
 
 // TableName - explicitne špecifikuje názov tabuľky pre GORM
@@ -104,14 +105,14 @@ func (DeviceAccess) TableName() string {
 
 // DeviceScanHistory reprezentuje skenovacie histórie zariadení
 type DeviceScanHistory struct {
-	ID              uuid.UUID      `json:"id" db:"id" gorm:"primaryKey"`
-	DeviceID        uuid.UUID      `json:"device_id" db:"device_id"`
-	ScannedByUserID uuid.UUID      `json:"scanned_by_user_id" db:"scanned_by_user_id"`
-	ScanTime        time.Time      `json:"scan_time" db:"scan_time"`
-	ScanResults     map[string]any `json:"scan_results" db:"scan_results" gorm:"type:jsonb"`
-	ScanRadiusKm    float64        `json:"scan_radius_km" db:"scan_radius_km"`
-	ItemsFound      int            `json:"items_found" db:"items_found"`
-	CreatedAt       time.Time      `json:"created_at" db:"created_at"`
+	ID              uuid.UUID         `json:"id" db:"id" gorm:"primaryKey"`
+	DeviceID        uuid.UUID         `json:"device_id" db:"device_id"`
+	ScannedByUserID uuid.UUID         `json:"scanned_by_user_id" db:"scanned_by_user_id"`
+	ScanTime        time.Time         `json:"scan_time" db:"scan_time"`
+	ScanResults     datatypes.JSONMap `json:"scan_results" db:"scan_results" gorm:"type:jsonb"`
+	ScanRadiusKm    float64           `json:"scan_radius_km" db:"scan_radius_km"`
+	ItemsFound      int               `json:"items_found" db:"items_found"`
+	CreatedAt       time.Time         `json:"created_at" db:"created_at"`
 }
 
 // TableName - explicitne špecifikuje názov tabuľky pre GORM
