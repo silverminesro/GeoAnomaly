@@ -558,6 +558,13 @@ func setupRoutes(db *gorm.DB, redisClient *redis.Client, r2Client *media.R2Clien
 		menuRoutes.GET("/transactions", menuHandler.GetUserTransactions)
 		menuRoutes.GET("/purchases", menuHandler.GetUserPurchases)
 		menuRoutes.GET("/essence/purchases", menuHandler.GetUserEssencePurchases)
+
+		// Order System endpoints (Market Enhancement Phase 2)
+		menuRoutes.GET("/orders", menuHandler.GetOrders)
+		menuRoutes.POST("/orders", menuHandler.CreateOrder)
+		menuRoutes.POST("/orders/:id/complete", menuHandler.CompleteOrder)
+		menuRoutes.POST("/orders/:id/cancel", menuHandler.CancelOrder)
+		menuRoutes.POST("/orders/:id/expedite", menuHandler.ExpediteOrder)
 	}
 
 	// ==========================================
@@ -685,16 +692,21 @@ func setupRoutes(db *gorm.DB, redisClient *redis.Client, r2Client *media.R2Clien
 				"endpoints": gin.H{
 					"media": mediaEndpoints,
 					"menu": gin.H{
-						"GET /menu/currency/all":         "💰 Get all user currencies",
-						"GET /menu/currency/{type}":      "💰 Get specific currency",
-						"GET /menu/market/items":         "🛒 Get market items",
-						"POST /menu/market/purchase":     "🛒 Purchase market item",
-						"GET /menu/essence/packages":     "💎 Get essence packages",
-						"POST /menu/essence/purchase":    "💎 Purchase essence package",
-						"POST /menu/inventory/{id}/sell": "💰 Sell inventory item",
-						"GET /menu/transactions":         "📊 Get transaction history",
-						"GET /menu/purchases":            "📊 Get purchase history",
-						"GET /menu/essence/purchases":    "📊 Get essence purchase history",
+						"GET /menu/currency/all":          "💰 Get all user currencies",
+						"GET /menu/currency/{type}":       "💰 Get specific currency",
+						"GET /menu/market/items":          "🛒 Get market items",
+						"POST /menu/market/purchase":      "🛒 Purchase market item",
+						"GET /menu/essence/packages":      "💎 Get essence packages",
+						"POST /menu/essence/purchase":     "💎 Purchase essence package",
+						"POST /menu/inventory/{id}/sell":  "💰 Sell inventory item",
+						"GET /menu/transactions":          "📊 Get transaction history",
+						"GET /menu/purchases":             "📊 Get purchase history",
+						"GET /menu/essence/purchases":     "📊 Get essence purchase history",
+						"GET /menu/orders":                "📦 Get user orders",
+						"POST /menu/orders":               "📦 Create new order",
+						"POST /menu/orders/{id}/complete": "✅ Complete order",
+						"POST /menu/orders/{id}/cancel":   "❌ Cancel order",
+						"POST /menu/orders/{id}/expedite": "⚡ Expedite order with essence",
 					},
 					"inventory": gin.H{
 						"GET /inventory/items":         "🎒 Get user inventory (with images)",
