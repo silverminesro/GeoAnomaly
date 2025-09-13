@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -93,8 +94,9 @@ func (h *Handler) GetMarketItems(c *gin.Context) {
 
 	category := c.Query("category")
 	rarity := c.Query("rarity")
+	includeLocked := c.Query("include_locked") == "true"
 
-	items, err := h.service.GetMarketItems(userID.(uuid.UUID), category, rarity)
+	items, err := h.service.GetMarketItems(userID.(uuid.UUID), category, rarity, includeLocked)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -115,9 +117,10 @@ func (h *Handler) PurchaseMarketItem(c *gin.Context) {
 	}
 
 	var request struct {
-		ItemID       uuid.UUID `json:"item_id" binding:"required"`
-		Quantity     int       `json:"quantity" binding:"required,min=1"`
-		CurrencyType string    `json:"currency_type" binding:"required"`
+		ItemID         uuid.UUID  `json:"item_id" binding:"required"`
+		Quantity       int        `json:"quantity" binding:"required,min=1"`
+		CurrencyType   string     `json:"currency_type" binding:"required"`
+		IdempotencyKey *uuid.UUID `json:"idempotency_key,omitempty"` // Phase 1: For safe retry
 	}
 
 	if err := c.ShouldBindJSON(&request); err != nil {
@@ -130,11 +133,16 @@ func (h *Handler) PurchaseMarketItem(c *gin.Context) {
 		return
 	}
 
-	err := h.service.PurchaseMarketItem(userID.(uuid.UUID), request.ItemID, request.Quantity, request.CurrencyType)
+	// Phase 1: Use idempotent purchase method
+	purchase, err := h.service.PurchaseMarketItemIdempotent(userID.(uuid.UUID), request.ItemID, request.Quantity, request.CurrencyType, request.IdempotencyKey)
 	if err != nil {
 		switch err {
 		case ErrInsufficientFunds:
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Insufficient funds"})
+		case ErrPurchaseLimit:
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Purchase limit exceeded"})
+		case ErrOutOfStock:
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Not enough stock"})
 		case ErrItemNotFound:
 			c.JSON(http.StatusNotFound, gin.H{"error": "Item not found"})
 		case ErrItemNotAvailable:
@@ -146,7 +154,8 @@ func (h *Handler) PurchaseMarketItem(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"message": "Item purchased successfully",
+		"purchase": purchase,
+		"message":  "Item purchased successfully",
 	})
 }
 
@@ -692,4 +701,285 @@ func (h *Handler) VerifyGooglePlaySubscription(c *gin.Context) {
 		"purchase_token": req.PurchaseToken,
 		"product_id":     req.ProductID,
 	})
+}
+
+// =====================================================
+// PHASE 2 - ORDER SYSTEM ENDPOINTS
+// =====================================================
+
+// CreateOrderRequest - request pre vytvorenie objednávky
+type CreateOrderRequest struct {
+	ItemID          uuid.UUID  `json:"item_id" binding:"required"`
+	Quantity        int        `json:"quantity" binding:"required,min=1"`
+	ExpediteEssence int        `json:"expedite_essence,omitempty"`
+	IdempotencyKey  *uuid.UUID `json:"idempotency_key,omitempty"`
+}
+
+// CreateOrderResponse - response pre vytvorenie objednávky
+type CreateOrderResponse struct {
+	OrderID         uuid.UUID `json:"order_id"`
+	ETAAt           string    `json:"eta_at"`
+	DepositCredits  int       `json:"deposit_credits"`
+	DepositEssence  int       `json:"deposit_essence"`
+	ExpediteApplied bool      `json:"expedite_applied"`
+	Message         string    `json:"message"`
+}
+
+// GetOrdersResponse - response pre zoznam objednávok
+type GetOrdersResponse struct {
+	Orders []OrderWithDetails `json:"orders"`
+	Total  int                `json:"total"`
+}
+
+// OrderWithDetails - objednávka s detailmi
+type OrderWithDetails struct {
+	Order
+	MarketItemName string `json:"market_item_name"`
+	MarketItemType string `json:"market_item_type"`
+	TimeToReady    *int64 `json:"time_to_ready_ms,omitempty"`         // ms do READY_FOR_PICKUP
+	TimeToExpiry   *int64 `json:"time_to_pickup_expiry_ms,omitempty"` // ms do expirácie pickup
+}
+
+// CompleteOrderRequest - request pre dokončenie objednávky
+type CompleteOrderRequest struct {
+	IdempotencyKey *uuid.UUID `json:"idempotency_key,omitempty"`
+}
+
+// CompleteOrderResponse - response pre dokončenie objednávky
+type CompleteOrderResponse struct {
+	OrderID           uuid.UUID `json:"order_id"`
+	ItemsMinted       int       `json:"items_minted"`
+	FinalPriceCredits int       `json:"final_price_credits"`
+	FinalPriceEssence int       `json:"final_price_essence"`
+	Message           string    `json:"message"`
+}
+
+// ExpediteOrderRequest - request pre zrýchlenie objednávky
+type ExpediteOrderRequest struct {
+	ExpediteEssence int `json:"expedite_essence" binding:"required,min=1"`
+}
+
+// ExpediteOrderResponse - response pre zrýchlenie objednávky
+type ExpediteOrderResponse struct {
+	OrderID         uuid.UUID `json:"order_id"`
+	NewETAAt        string    `json:"new_eta_at"`
+	ExpediteApplied int       `json:"expedite_applied"`
+	Message         string    `json:"message"`
+}
+
+// CancelOrderResponse - response pre zrušenie objednávky
+type CancelOrderResponse struct {
+	OrderID       uuid.UUID `json:"order_id"`
+	RefundCredits int       `json:"refund_credits"`
+	RefundEssence int       `json:"refund_essence"`
+	Message       string    `json:"message"`
+}
+
+// CreateOrder - vytvorenie novej objednávky
+func (h *Handler) CreateOrder(c *gin.Context) {
+	userID, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+		return
+	}
+
+	var req CreateOrderRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Vytvor objednávku
+	order, err := h.service.CreateOrder(userID.(uuid.UUID), req.ItemID, req.Quantity, req.ExpediteEssence, req.IdempotencyKey)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Vytvor response
+	response := CreateOrderResponse{
+		OrderID:         order.ID,
+		ETAAt:           order.ETAAt.Format(time.RFC3339),
+		DepositCredits:  order.DepositAmountCredits,
+		DepositEssence:  order.DepositAmountEssence,
+		ExpediteApplied: order.ExpediteEssence > 0,
+		Message:         "Order created successfully",
+	}
+
+	c.JSON(http.StatusCreated, response)
+}
+
+// GetOrders - zoznam objednávok hráča
+func (h *Handler) GetOrders(c *gin.Context) {
+	userID, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+		return
+	}
+
+	// Query parametre
+	state := c.Query("state")
+	limitStr := c.DefaultQuery("limit", "50")
+	offsetStr := c.DefaultQuery("offset", "0")
+
+	limit, err := strconv.Atoi(limitStr)
+	if err != nil || limit < 1 || limit > 100 {
+		limit = 50
+	}
+
+	offset, err := strconv.Atoi(offsetStr)
+	if err != nil || offset < 0 {
+		offset = 0
+	}
+
+	// Získaj objednávky
+	orders, total, err := h.service.GetUserOrders(userID.(uuid.UUID), state, limit, offset)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Priprav response s detailmi
+	ordersWithDetails := make([]OrderWithDetails, len(orders))
+	now := time.Now()
+
+	for i, order := range orders {
+		ordersWithDetails[i] = OrderWithDetails{
+			Order:          order,
+			MarketItemName: order.MarketItem.Name,
+			MarketItemType: order.MarketItem.Type,
+		}
+
+		// Vypočítaj čas do READY_FOR_PICKUP
+		if order.ETAAt != nil && order.State == OrderStateScheduled {
+			if order.ETAAt.After(now) {
+				timeToReady := order.ETAAt.Sub(now).Milliseconds()
+				ordersWithDetails[i].TimeToReady = &timeToReady
+			}
+		}
+
+		// Vypočítaj čas do expirácie pickup
+		if order.PickupExpiresAt != nil && order.State == OrderStateReadyForPickup {
+			if order.PickupExpiresAt.After(now) {
+				timeToExpiry := order.PickupExpiresAt.Sub(now).Milliseconds()
+				ordersWithDetails[i].TimeToExpiry = &timeToExpiry
+			}
+		}
+	}
+
+	response := GetOrdersResponse{
+		Orders: ordersWithDetails,
+		Total:  total,
+	}
+
+	c.JSON(http.StatusOK, response)
+}
+
+// CompleteOrder - dokončenie objednávky (doplatenie a mint do inventára)
+func (h *Handler) CompleteOrder(c *gin.Context) {
+	userID, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+		return
+	}
+
+	orderIDStr := c.Param("id")
+	orderID, err := uuid.Parse(orderIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid order ID"})
+		return
+	}
+
+	var req CompleteOrderRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Dokonči objednávku
+	result, err := h.service.CompleteOrder(userID.(uuid.UUID), orderID, req.IdempotencyKey)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	response := CompleteOrderResponse{
+		OrderID:           result.OrderID,
+		ItemsMinted:       result.ItemsMinted,
+		FinalPriceCredits: result.FinalPriceCredits,
+		FinalPriceEssence: result.FinalPriceEssence,
+		Message:           "Order completed successfully",
+	}
+
+	c.JSON(http.StatusOK, response)
+}
+
+// ExpediteOrder - zrýchlenie objednávky za essence
+func (h *Handler) ExpediteOrder(c *gin.Context) {
+	userID, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+		return
+	}
+
+	orderIDStr := c.Param("id")
+	orderID, err := uuid.Parse(orderIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid order ID"})
+		return
+	}
+
+	var req ExpediteOrderRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Zrýchli objednávku
+	order, err := h.service.ExpediteOrder(userID.(uuid.UUID), orderID, req.ExpediteEssence)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	response := ExpediteOrderResponse{
+		OrderID:         order.ID,
+		NewETAAt:        order.ETAAt.Format(time.RFC3339),
+		ExpediteApplied: order.ExpediteEssence,
+		Message:         "Order expedited successfully",
+	}
+
+	c.JSON(http.StatusOK, response)
+}
+
+// CancelOrder - zrušenie objednávky
+func (h *Handler) CancelOrder(c *gin.Context) {
+	userID, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+		return
+	}
+
+	orderIDStr := c.Param("id")
+	orderID, err := uuid.Parse(orderIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid order ID"})
+		return
+	}
+
+	// Zruš objednávku
+	result, err := h.service.CancelOrder(userID.(uuid.UUID), orderID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	response := CancelOrderResponse{
+		OrderID:       result.OrderID,
+		RefundCredits: result.RefundCredits,
+		RefundEssence: result.RefundEssence,
+		Message:       "Order cancelled successfully",
+	}
+
+	c.JSON(http.StatusOK, response)
 }
