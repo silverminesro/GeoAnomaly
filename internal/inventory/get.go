@@ -69,38 +69,84 @@ func (h *Handler) GetInventory(c *gin.Context) {
 		totalPages = (totalCount + int64(limit) - 1) / int64(limit)
 	}
 
+	// Helper functions for safe type conversion
+	asString := func(v interface{}) string {
+		switch t := v.(type) {
+		case string:
+			return t
+		case []byte:
+			return string(t)
+		default:
+			return ""
+		}
+	}
+
+	asUUID := func(v interface{}) (uuid.UUID, bool) {
+		switch t := v.(type) {
+		case uuid.UUID:
+			return t, true
+		case string:
+			u, err := uuid.Parse(t)
+			if err == nil {
+				return u, true
+			}
+		case []byte:
+			u, err := uuid.Parse(string(t))
+			if err == nil {
+				return u, true
+			}
+		}
+		return uuid.Nil, false
+	}
+
+	asProps := func(v interface{}) map[string]interface{} {
+		if v == nil {
+			return make(map[string]interface{})
+		}
+		switch t := v.(type) {
+		case map[string]interface{}:
+			return t
+		case []byte:
+			var m map[string]interface{}
+			if err := json.Unmarshal(t, &m); err == nil {
+				return m
+			}
+		case string:
+			var m map[string]interface{}
+			if err := json.Unmarshal([]byte(t), &m); err == nil {
+				return m
+			}
+		}
+		return make(map[string]interface{})
+	}
+
 	// Format items with enricher
 	var formattedItems []gin.H
 	for _, rawItem := range rawItems {
-		// ✅ FIX: Handle properties - they might be string in DB
-		var properties map[string]interface{}
-
-		switch props := rawItem["properties"].(type) {
-		case string:
-			// Properties are stored as JSON string, parse them
-			if err := json.Unmarshal([]byte(props), &properties); err != nil {
-				log.Printf("Failed to parse properties string: %v", err)
-				properties = make(map[string]interface{})
-			}
-		case map[string]interface{}:
-			// Properties are already a map
-			properties = props
-		default:
-			log.Printf("Unexpected properties type: %T", rawItem["properties"])
-			properties = make(map[string]interface{})
+		// Safe UUID parsing
+		id, ok := asUUID(rawItem["id"])
+		if !ok || id == uuid.Nil {
+			log.Printf("[inventory] WARN: invalid UUID in 'id': %#v", rawItem["id"])
+			continue
 		}
 
-		// Create DTO for enricher
-		itemID, _ := rawItem["item_id"].(string)
-		itemUUID, _ := uuid.Parse(itemID)
+		// Safe properties parsing
+		properties := asProps(rawItem["properties"])
+
+		// Safe item_id parsing (can be NULL)
+		itemID, _ := asUUID(rawItem["item_id"])
+
+		// Safe time parsing
+		createdAt, _ := rawItem["created_at"].(time.Time)
+		updatedAt, _ := rawItem["updated_at"].(time.Time)
 
 		dto := &InventoryItemDTO{
-			ID:         rawItem["id"].(uuid.UUID),
-			ItemID:     itemUUID,
-			ItemType:   rawItem["item_type"].(string),
+			ID:         id,
+			ItemID:     itemID,
+			ItemType:   asString(rawItem["item_type"]),
 			Properties: properties,
-			CreatedAt:  rawItem["created_at"].(time.Time).Format(time.RFC3339),
-			UpdatedAt:  rawItem["updated_at"].(time.Time).Format(time.RFC3339),
+			CreatedAt:  createdAt.Format(time.RFC3339),
+			UpdatedAt:  updatedAt.Format(time.RFC3339),
 		}
 
 		// Enrich item with display_name and image_url
@@ -243,7 +289,7 @@ func (h *Handler) GetItemDetail(c *gin.Context) {
 		properties = make(map[string]interface{})
 	}
 
-	// Create DTO for enricher
+	// Create DTO for enricher with safe parsing
 	itemUUID, parseErr := uuid.Parse(itemIDResult)
 	if parseErr != nil {
 		log.Printf("Failed to parse item_id UUID: %v", parseErr)
@@ -254,11 +300,17 @@ func (h *Handler) GetItemDetail(c *gin.Context) {
 		return
 	}
 
+	// Safe properties parsing
+	safeProperties := make(map[string]interface{})
+	if properties != nil {
+		safeProperties = properties
+	}
+
 	dto := &InventoryItemDTO{
 		ID:         itemUUID,
 		ItemID:     itemUUID,
 		ItemType:   itemType,
-		Properties: properties,
+		Properties: safeProperties,
 		CreatedAt:  createdAt.Format(time.RFC3339),
 		UpdatedAt:  updatedAt.Format(time.RFC3339),
 	}
