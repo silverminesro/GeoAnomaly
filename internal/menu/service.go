@@ -177,7 +177,7 @@ func (s *Service) PurchaseMarketItemIdempotent(userID uuid.UUID, itemID uuid.UUI
 	if idempotencyKey != nil {
 		var existing UserPurchase
 		if err := s.db.Where("user_id = ? AND idempotency_key = ?", userID, *idempotencyKey).
-			Find(&existing).Error; err == nil && existing.ID != "" {
+			Find(&existing).Error; err == nil && existing.ID != uuid.Nil {
 			return &existing, nil
 		}
 	}
