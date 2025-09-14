@@ -1494,12 +1494,26 @@ func (s *Service) mintItemToInventory(tx *gorm.DB, userID uuid.UUID, marketItem 
 		itemType = "scanner_battery"
 	}
 
+	// Vytvor správne properties na základe MarketItem dát
+	properties := map[string]interface{}{
+		"name":           marketItem.Name,
+		"slot":           "scanner",
+		"type":           "gear",
+		"level":          marketItem.Level,
+		"rarity":         marketItem.Rarity,
+		"category":       marketItem.Category,
+		"equipped":       false,
+		"purchased_at":   time.Now().Unix(),
+		"market_item_id": marketItem.ID,
+		"purchased_from": "market",
+	}
+
 	// Vytvor inventory item
 	inventoryItem := gameplay.InventoryItem{
 		UserID:     userID,
 		ItemType:   itemType,
 		ItemID:     marketItem.ID, // použijeme market item ID
-		Properties: gameplay.JSONB(marketItem.Properties),
+		Properties: gameplay.JSONB(properties),
 		Quantity:   1,
 	}
 
