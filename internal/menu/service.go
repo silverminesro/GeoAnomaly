@@ -333,12 +333,24 @@ func (s *Service) PurchaseMarketItemIdempotent(userID uuid.UUID, itemID uuid.UUI
 				result = &existing
 			} else {
 				result = &p
+				// Mint items do inventára len ak sa vytvoril nový záznam
+				for i := 0; i < quantity; i++ {
+					if err := s.mintItemToInventory(tx, userID, &item); err != nil {
+						return fmt.Errorf("chyba pri mintovaní itemu do inventára: %w", err)
+					}
+				}
 			}
 		} else {
 			if err := tx.Create(&p).Error; err != nil {
 				return err
 			}
 			result = &p
+			// Mint items do inventára
+			for i := 0; i < quantity; i++ {
+				if err := s.mintItemToInventory(tx, userID, &item); err != nil {
+					return fmt.Errorf("chyba pri mintovaní itemu do inventára: %w", err)
+				}
+			}
 		}
 
 		// 7) Update currency (po úspešnom zápise)
