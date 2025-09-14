@@ -3,7 +3,6 @@ package inventory
 import (
 	"database/sql"
 	"encoding/json"
-	"fmt"
 	"log"
 	"net/http"
 	"strconv"
@@ -70,18 +69,9 @@ func (h *Handler) GetInventory(c *gin.Context) {
 		totalPages = (totalCount + int64(limit) - 1) / int64(limit)
 	}
 
-	// Format items with image URLs
+	// Format items with enricher
 	var formattedItems []gin.H
 	for _, rawItem := range rawItems {
-		itemData := gin.H{
-			"id":         rawItem["id"],
-			"user_id":    rawItem["user_id"],
-			"item_type":  rawItem["item_type"],
-			"item_id":    rawItem["item_id"],
-			"quantity":   rawItem["quantity"],
-			"created_at": rawItem["created_at"],
-		}
-
 		// ✅ FIX: Handle properties - they might be string in DB
 		var properties map[string]interface{}
 
@@ -100,10 +90,41 @@ func (h *Handler) GetInventory(c *gin.Context) {
 			properties = make(map[string]interface{})
 		}
 
-		// Store parsed properties
-		itemData["properties"] = properties
+		// Create DTO for enricher
+		itemID, _ := rawItem["item_id"].(string)
+		itemUUID, _ := uuid.Parse(itemID)
 
-		// Extract common properties
+		dto := &InventoryItemDTO{
+			ID:         rawItem["id"].(uuid.UUID),
+			ItemID:     itemUUID,
+			ItemType:   rawItem["item_type"].(string),
+			Properties: properties,
+			CreatedAt:  rawItem["created_at"].(time.Time).Format(time.RFC3339),
+			UpdatedAt:  rawItem["updated_at"].(time.Time).Format(time.RFC3339),
+		}
+
+		// Enrich item with display_name and image_url
+		h.enricher.EnrichItem(dto)
+
+		// Build response
+		itemData := gin.H{
+			"id":           dto.ID,
+			"user_id":      rawItem["user_id"],
+			"item_type":    dto.ItemType,
+			"item_id":      dto.ItemID,
+			"quantity":     rawItem["quantity"],
+			"display_name": dto.DisplayName,
+			"properties":   dto.Properties,
+			"created_at":   dto.CreatedAt,
+			"updated_at":   dto.UpdatedAt,
+		}
+
+		// Add image URL if available
+		if dto.ImageURL != nil {
+			itemData["image_url"] = *dto.ImageURL
+		}
+
+		// Extract common properties for backward compatibility
 		if name, ok := properties["name"].(string); ok {
 			itemData["name"] = name
 		}
@@ -117,26 +138,14 @@ func (h *Handler) GetInventory(c *gin.Context) {
 			itemData["biome"] = biome
 		}
 
-		// Add image URL based on item type
-		itemTypeStr, _ := rawItem["item_type"].(string)
-		if itemTypeStr == "artifact" {
-			if artifactType, exists := properties["type"].(string); exists {
-				itemData["image_url"] = fmt.Sprintf("/api/v1/media/artifact/%s", artifactType)
-			}
-		} else if itemTypeStr == "gear" {
-			// For gear, we might use a different pattern
-			if gearType, exists := properties["type"].(string); exists {
-				itemData["image_url"] = fmt.Sprintf("/api/v1/media/gear/%s", gearType)
-			}
-
+		// Handle gear-specific properties
+		itemTypeStr := dto.ItemType
+		if itemTypeStr == "gear" {
 			// ✅ OPRAVENÉ: Skontroluj či je item skutočne vybavený v loadoute
 			var isEquipped bool
-			if itemTypeStr == "gear" {
-				// Check if this item is equipped in loadout
-				var loadoutCount int64
-				h.db.Model(&gameplay.LoadoutItem{}).Where("user_id = ? AND item_id = ?", userID, rawItem["id"]).Count(&loadoutCount)
-				isEquipped = loadoutCount > 0
-			}
+			var loadoutCount int64
+			h.db.Model(&gameplay.LoadoutItem{}).Where("user_id = ? AND item_id = ?", userID, rawItem["id"]).Count(&loadoutCount)
+			isEquipped = loadoutCount > 0
 			itemData["is_equipped"] = isEquipped
 
 			// Keep existing equipped field from properties for backward compatibility
@@ -234,19 +243,48 @@ func (h *Handler) GetItemDetail(c *gin.Context) {
 		properties = make(map[string]interface{})
 	}
 
-	// Build response
-	response := gin.H{
-		"id":         id,
-		"user_id":    userIDResult,
-		"item_type":  itemType,
-		"item_id":    itemIDResult,
-		"quantity":   quantity,
-		"properties": properties,
-		"created_at": createdAt,
-		"updated_at": updatedAt,
+	// Create DTO for enricher
+	itemUUID, parseErr := uuid.Parse(itemIDResult)
+	if parseErr != nil {
+		log.Printf("Failed to parse item_id UUID: %v", parseErr)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":   "Invalid item ID format",
+			"details": parseErr.Error(),
+		})
+		return
 	}
 
-	// Extract common fields from properties
+	dto := &InventoryItemDTO{
+		ID:         itemUUID,
+		ItemID:     itemUUID,
+		ItemType:   itemType,
+		Properties: properties,
+		CreatedAt:  createdAt.Format(time.RFC3339),
+		UpdatedAt:  updatedAt.Format(time.RFC3339),
+	}
+
+	// Enrich item with display_name and image_url
+	h.enricher.EnrichItem(dto)
+
+	// Build response
+	response := gin.H{
+		"id":           dto.ID,
+		"user_id":      userIDResult,
+		"item_type":    dto.ItemType,
+		"item_id":      dto.ItemID,
+		"quantity":     quantity,
+		"display_name": dto.DisplayName,
+		"properties":   dto.Properties,
+		"created_at":   dto.CreatedAt,
+		"updated_at":   dto.UpdatedAt,
+	}
+
+	// Add image URL if available
+	if dto.ImageURL != nil {
+		response["image_url"] = *dto.ImageURL
+	}
+
+	// Extract common fields from properties for backward compatibility
 	if name, ok := properties["name"].(string); ok {
 		response["name"] = name
 	}
@@ -255,17 +293,6 @@ func (h *Handler) GetItemDetail(c *gin.Context) {
 	}
 	if rarity, ok := properties["rarity"].(string); ok {
 		response["rarity"] = rarity
-	}
-
-	// Add image URL based on item type
-	if itemType == "artifact" {
-		if artifactType, exists := properties["type"].(string); exists {
-			response["image_url"] = fmt.Sprintf("/api/v1/media/artifact/%s", artifactType)
-		}
-	} else if itemType == "gear" {
-		if gearType, exists := properties["type"].(string); exists {
-			response["image_url"] = fmt.Sprintf("/api/v1/media/gear/%s", gearType)
-		}
 	}
 
 	c.JSON(http.StatusOK, gin.H{
