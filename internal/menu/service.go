@@ -1487,7 +1487,7 @@ func (s *Service) getSettingFloat(key string) (float64, error) {
 // mintItemToInventory - mint itemu do inventára
 func (s *Service) mintItemToInventory(tx *gorm.DB, userID uuid.UUID, marketItem *MarketItem) error {
 	// Určite item_type na základe market item typu
-	itemType := "gear" // default
+	itemType := "gear" // default (legacy)
 	if marketItem.IsScannerItem() {
 		itemType = "deployable_scanner"
 	} else if marketItem.IsPowerCellItem() {
@@ -1496,9 +1496,10 @@ func (s *Service) mintItemToInventory(tx *gorm.DB, userID uuid.UUID, marketItem 
 
 	// Vytvor správne properties na základe MarketItem dát
 	properties := map[string]interface{}{
+		"display_name":   marketItem.Name, // pre UI fallback
 		"name":           marketItem.Name,
 		"slot":           "scanner",
-		"type":           "gear",
+		"type":           itemType, // zosúladiť s ItemType
 		"level":          marketItem.Level,
 		"rarity":         marketItem.Rarity,
 		"category":       marketItem.Category,
@@ -1508,11 +1509,21 @@ func (s *Service) mintItemToInventory(tx *gorm.DB, userID uuid.UUID, marketItem 
 		"purchased_from": "market",
 	}
 
+	// Zvoliť správny ItemID pre klientské mapovanie (katalóg > market)
+	itemID := marketItem.ID
+	if marketItem.IsScannerItem() && marketItem.ScannerCatalogID != nil {
+		itemID = *marketItem.ScannerCatalogID
+		properties["catalog_ref"] = "scanner_catalog"
+	} else if marketItem.IsPowerCellItem() && marketItem.PowerCellCatalogID != nil {
+		itemID = *marketItem.PowerCellCatalogID
+		properties["catalog_ref"] = "power_cells_catalog"
+	}
+
 	// Vytvor inventory item
 	inventoryItem := gameplay.InventoryItem{
 		UserID:     userID,
 		ItemType:   itemType,
-		ItemID:     marketItem.ID, // použijeme market item ID
+		ItemID:     itemID,
 		Properties: gameplay.JSONB(properties),
 		Quantity:   1,
 	}
