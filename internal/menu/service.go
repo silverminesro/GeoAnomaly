@@ -1486,12 +1486,31 @@ func (s *Service) getSettingFloat(key string) (float64, error) {
 
 // mintItemToInventory - mint itemu do inventára
 func (s *Service) mintItemToInventory(tx *gorm.DB, userID uuid.UUID, marketItem *MarketItem) error {
-	// Určite item_type na základe market item typu
+	// Určite item_type na základe market item kategórie
 	itemType := "gear" // default (legacy)
-	if marketItem.IsScannerItem() {
+
+	switch marketItem.Category {
+	case "deployable_scanners":
 		itemType = "deployable_scanner"
-	} else if marketItem.IsPowerCellItem() {
+	case "scanner_batteries":
 		itemType = "scanner_battery"
+	case "hack_tools":
+		itemType = "hack_tool"
+	case "potions", "buffs", "consumables":
+		itemType = "consumable"
+	case "cosmetics", "skins":
+		itemType = "cosmetic"
+	case "artifacts":
+		itemType = "artifact"
+	default:
+		// Pre ostatné kategórie použij market item type
+		if marketItem.IsScannerItem() {
+			itemType = "deployable_scanner"
+		} else if marketItem.IsPowerCellItem() {
+			itemType = "scanner_battery"
+		} else {
+			itemType = marketItem.Type // fallback na market item type
+		}
 	}
 
 	// Vytvor správne properties na základe MarketItem dát
