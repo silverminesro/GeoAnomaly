@@ -70,8 +70,12 @@ func (s *Service) DeployDevice(userID uuid.UUID, req *DeployRequest) (*DeployRes
 		return nil, fmt.Errorf("failed to create deployed device: %w", err)
 	}
 
-	// 6. NEMAZAŤ z inventára – kus ostáva vlastníctvom hráča
-	// „v používaní" je dané referenciou v deployed_devices a vynútené UNIQUE indexom
+	// 6. Odstrániť scanner a batériu z inventára
+	if err := s.removeItemsFromInventory(req.DeviceInventoryID, req.BatteryInventoryID); err != nil {
+		// Ak sa nepodarí odstrániť z inventára, odstráň aj nasadené zariadenie
+		s.db.Delete(&device)
+		return nil, fmt.Errorf("failed to remove items from inventory: %w", err)
+	}
 
 	log.Printf("✅ Deployed device %s for user %s at [%.6f, %.6f]", device.Name, userID, req.Latitude, req.Longitude)
 
@@ -80,6 +84,26 @@ func (s *Service) DeployDevice(userID uuid.UUID, req *DeployRequest) (*DeployRes
 		DeviceID:   device.ID,
 		DeviceName: device.Name,
 	}, nil
+}
+
+// removeItemsFromInventory odstráni scanner a batériu z inventára po nasadení
+func (s *Service) removeItemsFromInventory(deviceInventoryID, batteryInventoryID uuid.UUID) error {
+	// Odstráň scanner z inventára (soft delete)
+	if err := s.db.Model(&InventoryItem{}).
+		Where("id = ?", deviceInventoryID).
+		Update("deleted_at", time.Now()).Error; err != nil {
+		return fmt.Errorf("failed to remove scanner from inventory: %w", err)
+	}
+
+	// Odstráň batériu z inventára (soft delete)
+	if err := s.db.Model(&InventoryItem{}).
+		Where("id = ?", batteryInventoryID).
+		Update("deleted_at", time.Now()).Error; err != nil {
+		return fmt.Errorf("failed to remove battery from inventory: %w", err)
+	}
+
+	log.Printf("✅ Removed scanner %s and battery %s from inventory", deviceInventoryID, batteryInventoryID)
+	return nil
 }
 
 // GetMyDevices - získa všetky zariadenia hráča (aktívne aj neaktívne)
