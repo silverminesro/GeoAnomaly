@@ -117,7 +117,7 @@ func (h *Handler) PurchaseMarketItem(c *gin.Context) {
 	}
 
 	var request struct {
-		ItemID         uuid.UUID  `json:"item_id" binding:"required"`
+		ItemID         string     `json:"item_id" binding:"required"` // Môže byť UUID alebo Flutter type
 		Quantity       int        `json:"quantity" binding:"required,min=1"`
 		CurrencyType   string     `json:"currency_type" binding:"required"`
 		IdempotencyKey *uuid.UUID `json:"idempotency_key,omitempty"` // Phase 1: For safe retry
@@ -133,8 +133,18 @@ func (h *Handler) PurchaseMarketItem(c *gin.Context) {
 		return
 	}
 
+	// Konvertuj ItemID na UUID (ak je to UUID) alebo použij ako string
+	var itemID uuid.UUID
+	var err error
+	
+	// Skús parsovať ako UUID
+	if itemID, err = uuid.Parse(request.ItemID); err != nil {
+		// Ak to nie je UUID, vytvor fake UUID z stringu pre kompatibilitu
+		itemID = uuid.NewSHA1(uuid.NameSpaceOID, []byte(request.ItemID))
+	}
+
 	// Phase 1: Use idempotent purchase method
-	purchase, err := h.service.PurchaseMarketItemIdempotent(userID.(uuid.UUID), request.ItemID, request.Quantity, request.CurrencyType, request.IdempotencyKey)
+	purchase, err := h.service.PurchaseMarketItemIdempotent(userID.(uuid.UUID), itemID, request.Quantity, request.CurrencyType, request.IdempotencyKey)
 	if err != nil {
 		switch err {
 		case ErrInsufficientFunds:

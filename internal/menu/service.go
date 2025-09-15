@@ -167,6 +167,18 @@ func (s *Service) GetMarketItems(userID uuid.UUID, category string, rarity strin
 	return filteredItems, nil
 }
 
+// mapFlutterTypeToBackendType mapuje Flutter typy na backend typy a kategórie
+func mapFlutterTypeToBackendType(flutterType string) (string, string) {
+	switch flutterType {
+	case "deployable_scanner":
+		return "gear", "deployable_scanners"
+	case "scanner_battery":
+		return "consumable", "scanner_batteries"
+	default:
+		return flutterType, ""
+	}
+}
+
 // Idempotentný nákup s vynútením limitov a bezpečným stock decrementom
 func (s *Service) PurchaseMarketItemIdempotent(userID uuid.UUID, itemID uuid.UUID, quantity int, currencyType string, idempotencyKey *uuid.UUID) (*UserPurchase, error) {
 	if quantity <= 0 {
@@ -184,15 +196,30 @@ func (s *Service) PurchaseMarketItemIdempotent(userID uuid.UUID, itemID uuid.UUI
 
 	var result *UserPurchase
 	err := s.db.Transaction(func(tx *gorm.DB) error {
-		// Načítaj položku
+		// Načítaj položku - najprv skús priamo podľa ID
 		var item MarketItem
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}). // lock proti súbehu stocku
 										Where("id = ? AND is_active = ?", itemID, true).
 										First(&item).Error; err != nil {
+			
+			// Ak sa nenašiel podľa ID, skús nájsť podľa Flutter type
 			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return ErrItemNotFound
+				// Skús nájsť item podľa Flutter type (deployable_scanner, scanner_battery)
+				// Najprv skús nájsť podľa type = 'gear' a category = 'deployable_scanners'
+				if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+					Where("type = ? AND category = ? AND is_active = ?", "gear", "deployable_scanners", true).
+					First(&item).Error; err != nil {
+					
+					// Skús nájsť podľa type = 'consumable' a category = 'scanner_batteries'
+					if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+						Where("type = ? AND category = ? AND is_active = ?", "consumable", "scanner_batteries", true).
+						First(&item).Error; err != nil {
+						return ErrItemNotFound
+					}
+				}
+			} else {
+				return err
 			}
-			return err
 		}
 		if !item.IsAvailable() { // existujúca metóda
 			return ErrItemNotAvailable
