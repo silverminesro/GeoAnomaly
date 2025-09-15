@@ -20,6 +20,7 @@ type Service struct {
 }
 
 func NewService(db *gorm.DB) *Service {
+	rand.Seed(time.Now().UnixNano())
 	return &Service{
 		db: db,
 	}
@@ -37,8 +38,9 @@ func (s *Service) DeployDevice(userID uuid.UUID, req *DeployRequest) (*DeployRes
 		return nil, err
 	}
 
-	// 3. Skontrolovať či má hráč zariadenie a batériu v inventári
-	if err := s.validateInventoryItems(userID, req.DeviceInventoryID, req.BatteryInventoryID); err != nil {
+	// 3. Validácia inventára – hráč to musí vlastniť a kusy nesmú byť v použití
+	iq := NewInventoryQueries(s.db)
+	if err := iq.ValidateDeploymentInventory(userID, req.DeviceInventoryID, req.BatteryInventoryID); err != nil {
 		return nil, err
 	}
 
@@ -51,7 +53,7 @@ func (s *Service) DeployDevice(userID uuid.UUID, req *DeployRequest) (*DeployRes
 		Name:               req.Name,
 		Latitude:           req.Latitude,
 		Longitude:          req.Longitude,
-		DeployedAt:         time.Now(),
+		DeployedAt:         time.Now().UTC(),
 		IsActive:           true,
 		BatteryLevel:       100,
 		Status:             DeviceStatusActive,
@@ -59,8 +61,8 @@ func (s *Service) DeployDevice(userID uuid.UUID, req *DeployRequest) (*DeployRes
 		ScanRadiusKm:       1.0,      // Default 1km scan radius
 		MaxRarityDetected:  "common", // Default common rarity detection
 		Properties:         make(map[string]any),
-		CreatedAt:          time.Now(),
-		UpdatedAt:          time.Now(),
+		CreatedAt:          time.Now().UTC(),
+		UpdatedAt:          time.Now().UTC(),
 	}
 
 	// 5. Uložiť do databázy
@@ -68,13 +70,8 @@ func (s *Service) DeployDevice(userID uuid.UUID, req *DeployRequest) (*DeployRes
 		return nil, fmt.Errorf("failed to create deployed device: %w", err)
 	}
 
-	// 6. Odstrániť zariadenie a batériu z inventára
-	if err := s.removeFromInventory(userID, req.DeviceInventoryID); err != nil {
-		return nil, fmt.Errorf("failed to remove device from inventory: %w", err)
-	}
-	if err := s.removeFromInventory(userID, req.BatteryInventoryID); err != nil {
-		return nil, fmt.Errorf("failed to remove battery from inventory: %w", err)
-	}
+	// 6. NEMAZAŤ z inventára – kus ostáva vlastníctvom hráča
+	// „v používaní" je dané referenciou v deployed_devices a vynútené UNIQUE indexom
 
 	log.Printf("✅ Deployed device %s for user %s at [%.6f, %.6f]", device.Name, userID, req.Latitude, req.Longitude)
 
@@ -85,11 +82,20 @@ func (s *Service) DeployDevice(userID uuid.UUID, req *DeployRequest) (*DeployRes
 	}, nil
 }
 
-// GetMyDevices - získa zariadenia hráča
+// GetMyDevices - získa všetky zariadenia hráča (aktívne aj neaktívne)
 func (s *Service) GetMyDevices(userID uuid.UUID) ([]DeployedDevice, error) {
 	var devices []DeployedDevice
 	if err := s.db.Where("owner_id = ?", userID).Find(&devices).Error; err != nil {
 		return nil, fmt.Errorf("failed to get user devices: %w", err)
+	}
+	return devices, nil
+}
+
+// GetMyActiveDevices - získa len aktívne zariadenia hráča
+func (s *Service) GetMyActiveDevices(userID uuid.UUID) ([]DeployedDevice, error) {
+	var devices []DeployedDevice
+	if err := s.db.Where("owner_id = ? AND is_active = true", userID).Find(&devices).Error; err != nil {
+		return nil, fmt.Errorf("failed to get user active devices: %w", err)
 	}
 	return devices, nil
 }
@@ -123,21 +129,17 @@ func (s *Service) ScanDeployableDevice(userID uuid.UUID, deviceID uuid.UUID, req
 	// 2b. Overiť oprávnenie na sken: owner alebo platný záznam v gameplay.device_access
 	if device.OwnerID != userID {
 		var count int64
-		err := s.db.Raw(`
-			SELECT 1
-			FROM gameplay.device_access da
-			WHERE da.device_id = ? AND da.user_id = ?
-			  AND (
-					da.access_level IN ('owner','permanent')
-				 OR (da.access_level = 'temporary' AND da.expires_at IS NOT NULL AND da.expires_at > NOW())
-			  )
-			  AND (
-					da.is_device_disabled = FALSE
-				 OR (da.is_device_disabled = TRUE AND da.disabled_until IS NOT NULL AND da.disabled_until <= NOW())
-			  )
-			LIMIT 1
-		`, deviceID, userID).Count(&count).Error
-		if err != nil || count == 0 {
+		err := s.db.
+			Table("gameplay.device_access").
+			Where("device_id = ? AND user_id = ?", deviceID, userID).
+			Where("(access_level IN ('owner','permanent') OR (access_level = 'temporary' AND expires_at > NOW()))").
+			Where("(is_device_disabled = FALSE OR (is_device_disabled = TRUE AND disabled_until <= NOW()))").
+			Limit(1).
+			Count(&count).Error
+		if err != nil {
+			return nil, fmt.Errorf("chyba pri kontrole prístupu: %w", err)
+		}
+		if count == 0 {
 			return nil, fmt.Errorf("nemáš prístup na skenovanie tohto zariadenia")
 		}
 	}
@@ -164,7 +166,13 @@ func (s *Service) ScanDeployableDevice(userID uuid.UUID, deviceID uuid.UUID, req
 	}
 
 	// 6. Nájsť najbližšie zóny v okolí zariadenia – použijeme skutočný dosah zariadenia
-	zones, err := s.findNearbyZones(device.Latitude, device.Longitude, device.ScanRadiusKm)
+	// Ensure default values for scan radius
+	scanRadiusKm := device.ScanRadiusKm
+	if scanRadiusKm <= 0 {
+		scanRadiusKm = 1.0 // Default 1km
+	}
+
+	zones, err := s.findNearbyZones(device.Latitude, device.Longitude, scanRadiusKm)
 	if err != nil {
 		return nil, fmt.Errorf("chyba pri hľadaní zón: %w", err)
 	}
@@ -187,7 +195,7 @@ func (s *Service) ScanDeployableDevice(userID uuid.UUID, deviceID uuid.UUID, req
 	if err := s.updateScanCooldown(userID, deviceID, cooldownSeconds); err != nil {
 		return nil, fmt.Errorf("chyba pri uložení cooldownu: %w", err)
 	}
-	cooldownUntil := time.Now().Add(time.Duration(cooldownSeconds) * time.Second)
+	cooldownUntil := time.Now().UTC().Add(time.Duration(cooldownSeconds) * time.Second)
 
 	// 10. Vrátiť výsledok so správnym CooldownUntil
 	return &DeployableScanResponse{
@@ -235,7 +243,7 @@ func (s *Service) HackDevice(hackerID uuid.UUID, deviceID uuid.UUID, req *HackRe
 	if hackTool.UsesLeft <= 0 {
 		return nil, fmt.Errorf("hackovací nástroj nemá žiadne zostávajúce použitia")
 	}
-	if hackTool.ExpiresAt != nil && time.Now().After(*hackTool.ExpiresAt) {
+	if hackTool.ExpiresAt != nil && time.Now().UTC().After(*hackTool.ExpiresAt) {
 		return nil, fmt.Errorf("hackovací nástroj vypršal")
 	}
 
@@ -249,12 +257,12 @@ func (s *Service) HackDevice(hackerID uuid.UUID, deviceID uuid.UUID, req *HackRe
 		ID:              uuid.New(),
 		DeviceID:        deviceID,
 		HackerID:        hackerID,
-		HackTime:        time.Now(),
+		HackTime:        time.Now().UTC(),
 		Success:         success,
 		HackToolUsed:    hackTool.ToolType,
 		DistanceM:       float64(distance),
 		HackDurationSec: hackDuration,
-		CreatedAt:       time.Now(),
+		CreatedAt:       time.Now().UTC(),
 	}
 
 	s.db.Create(&hack)
@@ -319,7 +327,7 @@ func (s *Service) ClaimAbandonedDevice(hackerID uuid.UUID, deviceID uuid.UUID, r
 	if hackTool.UsesLeft <= 0 {
 		return nil, fmt.Errorf("hackovací nástroj nemá žiadne zostávajúce použitia")
 	}
-	if hackTool.ExpiresAt != nil && time.Now().After(*hackTool.ExpiresAt) {
+	if hackTool.ExpiresAt != nil && time.Now().UTC().After(*hackTool.ExpiresAt) {
 		return nil, fmt.Errorf("hackovací nástroj vypršal")
 	}
 
@@ -337,12 +345,12 @@ func (s *Service) ClaimAbandonedDevice(hackerID uuid.UUID, deviceID uuid.UUID, r
 		ID:              uuid.New(),
 		DeviceID:        deviceID,
 		HackerID:        hackerID,
-		HackTime:        time.Now(),
+		HackTime:        time.Now().UTC(),
 		Success:         hackResponse.Success,
 		HackToolUsed:    hackTool.ToolType,
 		DistanceM:       float64(distance),
 		HackDurationSec: hackDuration,
-		CreatedAt:       time.Now(),
+		CreatedAt:       time.Now().UTC(),
 	}
 	s.db.Create(&hack)
 
@@ -380,7 +388,7 @@ func (s *Service) GetCooldownStatus(userID uuid.UUID, deviceID uuid.UUID) (*Cool
 		return nil, fmt.Errorf("chyba pri kontrole cooldownu")
 	}
 
-	now := time.Now()
+	now := time.Now().UTC()
 	canScan := now.After(cooldown.CooldownUntil)
 	remainingSeconds := 0
 
@@ -498,18 +506,19 @@ func (s *Service) validateDeploymentDistance(userID uuid.UUID, deviceLat, device
 	return nil
 }
 
+// validateInventoryItems - DEPRECATED: Používa sa ValidateDeploymentInventory z inventory_queries.go
 func (s *Service) validateInventoryItems(userID uuid.UUID, deviceID, batteryID uuid.UUID) error {
-	// TODO: Implement inventory validation
-	_ = userID    // Suppress unused parameter warning
-	_ = deviceID  // Suppress unused parameter warning
-	_ = batteryID // Suppress unused parameter warning
-	return nil
+	// DEPRECATED: Táto funkcia je nahradená ValidateDeploymentInventory z inventory_queries.go
+	// Zachováva sa pre kompatibilitu, ale nemala by sa používať
+	iq := NewInventoryQueries(s.db)
+	return iq.ValidateDeploymentInventory(userID, deviceID, batteryID)
 }
 
+// removeFromInventory - DEPRECATED: Items sa už nemazajú z inventára po deploy
 func (s *Service) removeFromInventory(userID, itemID uuid.UUID) error {
-	// TODO: Implement inventory removal
-	_ = userID // Suppress unused parameter warning
-	_ = itemID // Suppress unused parameter warning
+	// DEPRECATED: Items sa už nemazajú z inventára po deploy
+	// "V používaní" je dané referenciou v deployed_devices a vynútené UNIQUE indexom
+	log.Printf("⚠️ removeFromInventory called but items are no longer removed from inventory after deploy")
 	return nil
 }
 
@@ -527,7 +536,7 @@ func (s *Service) validateScanCooldown(userID uuid.UUID, deviceID uuid.UUID) err
 	}
 
 	// Skontrolovať či cooldown vypršal
-	if time.Now().Before(cooldown.CooldownUntil) {
+	if time.Now().UTC().Before(cooldown.CooldownUntil) {
 		remainingTime := time.Until(cooldown.CooldownUntil)
 		return fmt.Errorf("musíš počkať %v pred ďalším skenovaním", remainingTime.Round(time.Second))
 	}
@@ -536,7 +545,7 @@ func (s *Service) validateScanCooldown(userID uuid.UUID, deviceID uuid.UUID) err
 }
 
 func (s *Service) updateScanCooldown(userID uuid.UUID, deviceID uuid.UUID, cooldownSeconds int) error {
-	cooldownUntil := time.Now().Add(time.Duration(cooldownSeconds) * time.Second)
+	cooldownUntil := time.Now().UTC().Add(time.Duration(cooldownSeconds) * time.Second)
 
 	// Upsert cooldown record
 	result := s.db.Exec(`
@@ -589,8 +598,19 @@ func (s *Service) filterArtifactsByScanner(artifacts []gameplay.Artifact, req *D
 	_ = req // Suppress unused parameter warning
 	var results []DeployableScanResult
 
+	// Ensure default values for scan radius and max rarity
+	scanRadiusKm := device.ScanRadiusKm
+	if scanRadiusKm <= 0 {
+		scanRadiusKm = 1.0 // Default 1km
+	}
+
+	maxRarityDetected := device.MaxRarityDetected
+	if maxRarityDetected == "" {
+		maxRarityDetected = "common" // Default common rarity
+	}
+
 	// Konvertovať scan radius z km na metre (podľa capability zariadenia)
-	maxRangeM := int(device.ScanRadiusKm * 1000)
+	maxRangeM := int(scanRadiusKm * 1000)
 
 	for _, artifact := range artifacts {
 		// Vypočítať vzdialenosť od zariadenia k artefaktu
@@ -607,7 +627,7 @@ func (s *Service) filterArtifactsByScanner(artifacts []gameplay.Artifact, req *D
 		}
 
 		// Skontrolovať či scanner dokáže detekovať túto raritu
-		if !s.canDetectRarity(artifact.Rarity, device.MaxRarityDetected) {
+		if !s.canDetectRarity(artifact.Rarity, maxRarityDetected) {
 			continue
 		}
 
@@ -691,26 +711,26 @@ func (s *Service) grantDeviceAccess(hackerID uuid.UUID, deviceID uuid.UUID, hack
 		// Môže byť disabled - 25% šanca
 		isDisabled = rand.Float64() < 0.25
 		if isDisabled {
-			dt := time.Now().Add(24 * time.Hour)
+			dt := time.Now().UTC().Add(24 * time.Hour)
 			disabledUntil = &dt
 
 			// Aktualizovať last_disabled_at
-			s.db.Model(&device).Update("last_disabled_at", time.Now())
+			s.db.Model(&device).Update("last_disabled_at", time.Now().UTC())
 		}
 	}
 
-	accessUntil := time.Now().Add(24 * time.Hour)
+	accessUntil := time.Now().UTC().Add(24 * time.Hour)
 
 	// Vytvoriť prístupový záznam
 	access := DeviceAccess{
 		DeviceID:         deviceID,
 		UserID:           hackerID,
-		GrantedAt:        time.Now(),
+		GrantedAt:        time.Now().UTC(),
 		ExpiresAt:        accessUntil,
 		AccessLevel:      "temporary",
 		IsDeviceDisabled: isDisabled,
 		DisabledUntil:    disabledUntil,
-		CreatedAt:        time.Now(),
+		CreatedAt:        time.Now().UTC(),
 	}
 
 	if err := s.db.Create(&access).Error; err != nil {
@@ -732,7 +752,11 @@ func (s *Service) claimAbandonedDevice(hackerID uuid.UUID, deviceID uuid.UUID, h
 
 	err := s.db.Transaction(func(tx *gorm.DB) error {
 		// 1. Advisory lock pre zabránenie race conditions
-		if err := tx.Exec("SELECT pg_advisory_xact_lock(?)", deviceID).Error; err != nil {
+		// PG advisory lock potrebuje BIGINT: z UUID spravíme stabilný 64-bit hash
+		if err := tx.Exec(
+			"SELECT pg_advisory_xact_lock(hashtextextended(?::text, 0))",
+			deviceID.String(),
+		).Error; err != nil {
 			return fmt.Errorf("chyba pri získaní locku: %w", err)
 		}
 
@@ -766,7 +790,7 @@ func (s *Service) claimAbandonedDevice(hackerID uuid.UUID, deviceID uuid.UUID, h
 			"battery_level":       100,
 			"battery_depleted_at": nil,
 			"abandoned_at":        nil,
-			"updated_at":          time.Now(),
+			"updated_at":          time.Now().UTC(),
 			// TODO: "battery_inventory_id": newBatteryID,
 		}
 
@@ -888,7 +912,17 @@ func (s *Service) GetMapMarkers(userID uuid.UUID, lat, lng float64) (*MapMarkers
 		}
 	}
 
-	return &MapMarkersResponse{Markers: markers}, nil
+	// Dedup podľa ID (ponechaj prvý výskyt, aby ostal „visibilityType" z primárneho zdroja)
+	seen := make(map[uuid.UUID]bool)
+	uniq := make([]MapMarker, 0, len(markers))
+	for _, m := range markers {
+		if seen[m.ID] {
+			continue
+		}
+		seen[m.ID] = true
+		uniq = append(uniq, m)
+	}
+	return &MapMarkersResponse{Markers: uniq}, nil
 }
 
 // pomocné štruktúry na skenovanie s distance/hacked_by
@@ -977,21 +1011,22 @@ func (s *Service) getAbandonedScanners(lat, lng float64, radiusKm float64) ([]Ma
 // getHackedScanners - hacknuté scannery do 20km
 func (s *Service) getHackedScanners(userID uuid.UUID, lat, lng float64, radiusKm float64) ([]MapMarker, error) {
 	query := `
-		SELECT dd.*, 
+		SELECT dd.*,
 		       ST_Distance(
 		           dd.location,
 		           ST_SetSRID(ST_MakePoint(?, ?), 4326)::geography
-		       ) / 1000.0 as distance_km,
-		       da.user_id as hacked_by
+		       ) / 1000.0 AS distance_km,
+		       da.user_id AS hacked_by
 		FROM gameplay.deployed_devices dd
-		JOIN device_access da ON dd.id = da.device_id
-		WHERE (dd.owner_id = ? OR da.user_id = ?)
-		  AND dd.is_active = true
+		LEFT JOIN gameplay.device_access da
+		       ON dd.id = da.device_id AND da.user_id = ?
+		WHERE dd.is_active = TRUE
 		  AND da.expires_at > NOW()
+		  AND (dd.owner_id = ? OR da.user_id IS NOT NULL)
 		  AND ST_DWithin(
-		      dd.location,
-		      ST_SetSRID(ST_MakePoint(?, ?), 4326)::geography,
-		      ?
+		        dd.location,
+		        ST_SetSRID(ST_MakePoint(?, ?), 4326)::geography,
+		        ?
 		  )
 		ORDER BY distance_km ASC
 	`
@@ -1062,6 +1097,12 @@ func (s *Service) createMarkerFromDevice(device DeployedDevice, visibilityType s
 	canScan := device.Status == DeviceStatusActive && device.IsActive
 	canClaim := device.Status == DeviceStatusAbandoned
 
+	// Ensure default values for scan radius
+	scanRadiusKm := device.ScanRadiusKm
+	if scanRadiusKm <= 0 {
+		scanRadiusKm = 1.0 // Default 1km
+	}
+
 	return MapMarker{
 		ID:             device.ID,
 		Type:           "deployed_scanner",
@@ -1070,7 +1111,7 @@ func (s *Service) createMarkerFromDevice(device DeployedDevice, visibilityType s
 		Longitude:      device.Longitude,
 		Icon:           icon,
 		BatteryLevel:   device.BatteryLevel,
-		ScanRadiusKm:   device.ScanRadiusKm,
+		ScanRadiusKm:   scanRadiusKm,
 		CanHack:        canHack,
 		CanScan:        canScan,
 		CanClaim:       canClaim,
