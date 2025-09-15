@@ -37,10 +37,10 @@ func (h *Handler) GetArtifactImage(c *gin.Context) {
 	log.Printf("🔍 Request method: %s", c.Request.Method)
 	log.Printf("🔑 Authorization header present: %v", c.GetHeader("Authorization") != "")
 
-	// Získaj dáta obrázka
-	imageData, contentType, err := h.service.GetArtifactImageData(c.Request.Context(), artifactType)
+	// Získaj dáta obrázka s fallback na default
+	imageData, contentType, err := h.service.GetArtifactImageDataWithFallback(c.Request.Context(), artifactType)
 	if err != nil {
-		log.Printf("❌ Failed to get image data: %v", err)
+		log.Printf("❌ Failed to get artifact image data (even with fallback): %v", err)
 		c.JSON(http.StatusNotFound, gin.H{
 			"error":   "Artifact image not found",
 			"type":    artifactType,
@@ -111,10 +111,10 @@ func (h *Handler) GetGearImage(c *gin.Context) {
 	log.Printf("🔍 Request method: %s", c.Request.Method)
 	log.Printf("🔑 Authorization header present: %v", c.GetHeader("Authorization") != "")
 
-	// Získaj dáta obrázka
-	imageData, contentType, err := h.service.GetGearImageData(c.Request.Context(), gearType)
+	// Získaj dáta obrázka s fallback na default
+	imageData, contentType, err := h.service.GetGearImageDataWithFallback(c.Request.Context(), gearType)
 	if err != nil {
-		log.Printf("❌ Failed to get gear image data: %v", err)
+		log.Printf("❌ Failed to get gear image data (even with fallback): %v", err)
 		c.JSON(http.StatusNotFound, gin.H{
 			"error":   "Gear image not found",
 			"type":    gearType,
