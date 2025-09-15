@@ -18,6 +18,7 @@ var (
 	ErrItemNotAvailable  = errors.New("item not available")
 	ErrItemNotFound      = errors.New("item not found")
 	ErrUserNotFound      = errors.New("user not found")
+	ErrAlreadyReserved   = errors.New("item already reserved")
 	ErrInvalidAmount     = errors.New("invalid amount")
 	ErrInvalidCurrency   = errors.New("invalid currency type")
 	ErrPackageNotFound   = errors.New("essence package not found")
@@ -185,12 +186,17 @@ func (s *Service) PurchaseMarketItemIdempotent(userID uuid.UUID, itemID uuid.UUI
 		return nil, ErrInvalidAmount
 	}
 
-	// 1) Ak je odoslaný idempotency key a existuje záznam → vráť ho (rovnaký výsledok)
+	// B1) Idempotencia – používaj iba ak idempotency_key != nil
 	if idempotencyKey != nil {
+		// Rýchla cesta: existujúci záznam?
 		var existing UserPurchase
-		if err := s.db.Where("user_id = ? AND idempotency_key = ?", userID, *idempotencyKey).
-			Find(&existing).Error; err == nil && existing.ID != uuid.Nil {
+		err := s.db.Where("user_id = ? AND idempotency_key = ?", userID, *idempotencyKey).
+			First(&existing).Error
+		if err == nil {
+			// Vráť existujúci výsledok
 			return &existing, nil
+		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, err
 		}
 	}
 
@@ -201,7 +207,7 @@ func (s *Service) PurchaseMarketItemIdempotent(userID uuid.UUID, itemID uuid.UUI
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}). // lock proti súbehu stocku
 										Where("id = ? AND is_active = ?", itemID, true).
 										First(&item).Error; err != nil {
-			
+
 			// Ak sa nenašiel podľa ID, skús nájsť podľa Flutter type
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				// Skús nájsť item podľa Flutter type (deployable_scanner, scanner_battery)
@@ -209,7 +215,7 @@ func (s *Service) PurchaseMarketItemIdempotent(userID uuid.UUID, itemID uuid.UUI
 				if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 					Where("type = ? AND category = ? AND is_active = ?", "gear", "deployable_scanners", true).
 					First(&item).Error; err != nil {
-					
+
 					// Skús nájsť podľa type = 'consumable' a category = 'scanner_batteries'
 					if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 						Where("type = ? AND category = ? AND is_active = ?", "consumable", "scanner_batteries", true).
@@ -308,7 +314,26 @@ func (s *Service) PurchaseMarketItemIdempotent(userID uuid.UUID, itemID uuid.UUI
 			}
 		}
 
-		// 5) Zaplať + transaction
+		// B2) Rezervácia skladu – isti si lock a kolízie rieš graciózne
+		if item.IsLimited {
+			// Vytvor stock rezerváciu
+			reserve := StockLedger{
+				MarketItemID: item.ID,
+				Delta:        -quantity, // záporné pri reserve
+				Reason:       StockReasonReserve,
+				RefID:        &itemID, // použijeme itemID ako ref_id
+			}
+
+			if err := tx.Create(&reserve).Error; err != nil {
+				// Ak padlo na unique constraint, vráť „already reserved"
+				if errors.Is(err, gorm.ErrDuplicatedKey) {
+					return ErrAlreadyReserved
+				}
+				return err
+			}
+		}
+
+		// B3) Vytvor transakciu (credits/essence log) → musí vzniknúť skôr, než user_purchases
 		before := currency.Amount
 		currency.Subtract(price)
 		txn := Transaction{
@@ -326,41 +351,41 @@ func (s *Service) PurchaseMarketItemIdempotent(userID uuid.UUID, itemID uuid.UUI
 			return err
 		}
 
-		// 6) Vytvor purchase (idempotentne)
-		p := UserPurchase{
-			UserID:        userID,
-			MarketItemID:  itemID,
-			Quantity:      quantity,
-			TransactionID: txn.ID,
-			State:         PurchaseStateCompleted,
-		}
-		if currencyType == CurrencyCredits {
-			p.PaidCredits = price
-		} else {
-			p.PaidEssence = price
-		}
+		// B1) Až teraz user_purchases – POZOR na ON CONFLICT
 		if idempotencyKey != nil {
-			p.IdempotencyKey = idempotencyKey
-		}
-		// ON CONFLICT (user_id, idempotency_key) DO NOTHING
-		if idempotencyKey != nil {
+			// INSERT s ON CONFLICT len ak máme non-null idemKey a index existuje
+			p := UserPurchase{
+				UserID:         userID,
+				MarketItemID:   itemID,
+				Quantity:       quantity,
+				State:          PurchaseStateCompleted,
+				TransactionID:  txn.ID,
+				IdempotencyKey: idempotencyKey,
+			}
+			if currencyType == CurrencyCredits {
+				p.PaidCredits = price
+			} else {
+				p.PaidEssence = price
+			}
+
 			if err := tx.Clauses(clause.OnConflict{
 				Columns:   []clause.Column{{Name: "user_id"}, {Name: "idempotency_key"}},
 				DoNothing: true,
 			}).Create(&p).Error; err != nil {
 				return err
 			}
-			// Ak nevložilo (duplicitný key), načítaj existujúci záznam
-			if p.ID == uuid.Nil {
-				var existing UserPurchase
-				if err := tx.Where("user_id = ? AND idempotency_key = ?", userID, *idempotencyKey).
-					First(&existing).Error; err != nil {
-					return err
-				}
-				result = &existing
-			} else {
-				result = &p
-				// Mint items do inventára len ak sa vytvoril nový záznam
+
+			// Znovu prečítaj pre istotu (ak DO NOTHING nastal)
+			var up UserPurchase
+			if err := tx.Where("user_id = ? AND idempotency_key = ?", userID, *idempotencyKey).
+				Last(&up).Error; err != nil {
+				return err
+			}
+			result = &up
+
+			// Mint items do inventára len ak sa vytvoril nový záznam (nie duplicitný)
+			// Skontroluj, či je to nový záznam porovnaním s p.ID
+			if p.ID != uuid.Nil {
 				for i := 0; i < quantity; i++ {
 					if err := s.mintItemToInventory(tx, userID, &item); err != nil {
 						return fmt.Errorf("chyba pri mintovaní itemu do inventára: %w", err)
@@ -368,6 +393,20 @@ func (s *Service) PurchaseMarketItemIdempotent(userID uuid.UUID, itemID uuid.UUI
 				}
 			}
 		} else {
+			// Bez idempotencie – obyčajný insert
+			p := UserPurchase{
+				UserID:        userID,
+				MarketItemID:  itemID,
+				Quantity:      quantity,
+				State:         PurchaseStateCompleted,
+				TransactionID: txn.ID,
+			}
+			if currencyType == CurrencyCredits {
+				p.PaidCredits = price
+			} else {
+				p.PaidEssence = price
+			}
+
 			if err := tx.Create(&p).Error; err != nil {
 				return err
 			}
