@@ -15,6 +15,16 @@ import (
 	"gorm.io/gorm/clause"
 )
 
+// Deployment distance constants
+const (
+	// TESTOVACIA VZDIALENOST: 5km (5000m) - len pre testovanie!
+	// OSTRA PREVADZKA: 50m (50) - produkčné nastavenie
+	MaxDeploymentDistanceMeters = 5000 // TODO: Zmeniť na 50 pre produkciu
+
+	// Security threshold - ak je vzdialenosť > 10km, pravdepodobne sa pokúša obísť
+	SecurityDistanceThresholdMeters = 10000
+)
+
 type Service struct {
 	db *gorm.DB
 }
@@ -522,9 +532,15 @@ func (s *Service) validateDeploymentDistance(userID uuid.UUID, deviceLat, device
 		deviceLng,
 	)
 
-	// Validovať vzdialenosť (max 100m pre deploy)
-	if distance > 100 {
-		return fmt.Errorf("príliš ďaleko od aktuálnej polohy (%dm)", distance)
+	// Validovať vzdialenosť pre deployment
+	if distance > MaxDeploymentDistanceMeters {
+		// Detekcia pokusu o obchádzanie limitu
+		if distance > SecurityDistanceThresholdMeters {
+			log.Printf("🚨 SECURITY: User %s attempted to deploy device at suspicious distance: %dm (current location: [%.6f, %.6f], deploy location: [%.6f, %.6f])",
+				userID, distance, session.LastLocationLatitude, session.LastLocationLongitude, deviceLat, deviceLng)
+			return fmt.Errorf("bezpečnostné obmedzenie: príliš veľká vzdialenosť (%dm). Kontaktujte administrátora", distance)
+		}
+		return fmt.Errorf("príliš ďaleko od aktuálnej polohy (%dm). Maximálna povolená vzdialenosť: %dm", distance, MaxDeploymentDistanceMeters)
 	}
 
 	return nil
