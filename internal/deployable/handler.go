@@ -550,5 +550,10 @@ func (h *Handler) RemoveBattery(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, response)
+	// Vrátiť správny HTTP kód podľa úspechu
+	if response.Success {
+		c.JSON(http.StatusOK, response)
+	} else {
+		c.JSON(http.StatusBadRequest, response)
+	}
 }

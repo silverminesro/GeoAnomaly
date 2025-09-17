@@ -1237,40 +1237,47 @@ func (s *Service) RemoveBattery(deviceID uuid.UUID, userID uuid.UUID) (*RemoveBa
 		}, nil
 	}
 
-	// 4. Vrátiť batériu do inventára s 0% batériou
+	// 4. Vrátiť batériu do inventára s 0% batériou v transakcii
 	batteryInventoryID := *device.BatteryInventoryID
-
-	// Obnoviť batériu v inventári (odstrániť soft delete) a nastaviť na 0%
-	if err := s.db.Model(&InventoryItem{}).Where("id = ?", batteryInventoryID).Updates(map[string]interface{}{
-		"deleted_at": nil,
-		"properties": `{"battery_level": 0}`,
-		"updated_at": time.Now(),
-	}).Error; err != nil {
-		log.Printf("⚠️ Failed to restore battery in inventory: %v", err)
-		return &RemoveBatteryResponse{
-			Success: false,
-			Message: "Chyba pri obnovení batérie v inventári",
-		}, nil
-	}
-
-	// 5. Odstrániť batériu zo zariadenia
-	if err := s.db.Model(&device).Updates(map[string]interface{}{
-		"battery_inventory_id": nil,
-		"battery_status":       "removed",
-		"battery_level":        0,
-		"updated_at":           time.Now(),
-	}).Error; err != nil {
-		log.Printf("⚠️ Failed to remove battery from device: %v", err)
-		return &RemoveBatteryResponse{
-			Success: false,
-			Message: "Chyba pri odstraňovaní batérie zo zariadenia",
-		}, nil
-	}
-
-	// 6. Načítať aktualizované zariadenie
 	var updatedDevice DeployedDevice
-	if err := s.db.Where("id = ?", deviceID).First(&updatedDevice).Error; err != nil {
-		log.Printf("⚠️ Failed to load updated device: %v", err)
+
+	err := s.db.Transaction(func(tx *gorm.DB) error {
+		// Najprv odstrániť batériu zo zariadenia
+		if err := tx.Model(&device).Updates(map[string]interface{}{
+			"battery_inventory_id": nil,
+			"battery_status":       "removed",
+			"battery_level":        0,
+			"updated_at":           time.Now(),
+		}).Error; err != nil {
+			return fmt.Errorf("failed to remove battery from device: %w", err)
+		}
+
+		// Potom obnoviť batériu v inventári (odstrániť soft delete) a nastaviť na 0%
+		// Použiť charge_pct namiesto battery_level pre správnu validáciu
+		if err := tx.Exec(`
+			UPDATE gameplay.inventory_items
+			SET deleted_at = NULL,
+			    properties = jsonb_set(COALESCE(properties,'{}'::jsonb), '{charge_pct}', '0'::jsonb, true),
+			    updated_at = NOW()
+			WHERE id = ?
+		`, batteryInventoryID).Error; err != nil {
+			return fmt.Errorf("failed to restore battery in inventory: %w", err)
+		}
+
+		// Načítať aktualizované zariadenie
+		if err := tx.Where("id = ?", deviceID).First(&updatedDevice).Error; err != nil {
+			return fmt.Errorf("failed to load updated device: %w", err)
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		log.Printf("⚠️ Failed to remove battery: %v", err)
+		return &RemoveBatteryResponse{
+			Success: false,
+			Message: "Chyba pri vybratí batérie: " + err.Error(),
+		}, nil
 	}
 
 	log.Printf("🔋 Battery removed from device %s (%s) by user %s", deviceID, device.Name, userID)
