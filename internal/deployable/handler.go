@@ -537,7 +537,7 @@ func (h *Handler) RemoveBattery(c *gin.Context) {
 		return
 	}
 
-	deviceIDStr := c.Param("deviceId")
+	deviceIDStr := c.Param("device_id")
 	deviceID, err := uuid.Parse(deviceIDStr)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid device ID format"})
