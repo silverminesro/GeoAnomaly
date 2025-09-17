@@ -1240,12 +1240,16 @@ func (s *Service) RemoveBattery(deviceID uuid.UUID, userID uuid.UUID) (*RemoveBa
 	// 4. Vrátiť batériu do inventára s 0% batériou
 	batteryInventoryID := *device.BatteryInventoryID
 
-	// Aktualizovať batériu v inventári na 0%
-	if err := s.db.Model(&InventoryItem{}).Where("id = ?", batteryInventoryID).Update("properties", `{"battery_level": 0}`).Error; err != nil {
-		log.Printf("⚠️ Failed to update battery in inventory: %v", err)
+	// Obnoviť batériu v inventári (odstrániť soft delete) a nastaviť na 0%
+	if err := s.db.Model(&InventoryItem{}).Where("id = ?", batteryInventoryID).Updates(map[string]interface{}{
+		"deleted_at": nil,
+		"properties": `{"battery_level": 0}`,
+		"updated_at": time.Now(),
+	}).Error; err != nil {
+		log.Printf("⚠️ Failed to restore battery in inventory: %v", err)
 		return &RemoveBatteryResponse{
 			Success: false,
-			Message: "Chyba pri aktualizácii batérie v inventári",
+			Message: "Chyba pri obnovení batérie v inventári",
 		}, nil
 	}
 
