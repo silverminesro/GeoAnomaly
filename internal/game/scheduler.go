@@ -183,7 +183,7 @@ func (s *Scheduler) drainDeployedScannerBatteries() {
 				ROUND(
 					dd.battery_level::numeric - GREATEST(
 						COALESCE(
-							CAST(ii.properties->>'drain_rate_per_hour' AS NUMERIC) / 12.0,
+							CAST(mi.properties->>'drain_rate_per_hour' AS NUMERIC) / 12.0,
 							1.0 / 12.0  -- Default 1.0% per hour if not specified
 						),
 						0.0833333333  -- Minimum 0.083333% per 5min (1% per hour)
@@ -192,9 +192,10 @@ func (s *Scheduler) drainDeployedScannerBatteries() {
 				0
 			),
 			updated_at = NOW()
-		FROM gameplay.inventory_items ii
+		FROM gameplay.inventory_items ii, market.market_items mi
 		WHERE 
 			dd.battery_inventory_id = ii.id
+			AND ii.item_id = mi.id
 			AND dd.is_active = true 
 			AND dd.battery_level > 0
 			AND dd.status = 'active'
