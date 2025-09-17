@@ -175,13 +175,13 @@ func (s *Scheduler) drainDeployedScannerBatteries() {
 
 	// Update battery levels for active deployed scanners using actual battery drain rates
 	result := s.db.Exec(`
-		UPDATE gameplay.deployed_devices 
+		UPDATE gameplay.deployed_devices dd
 		SET 
 			battery_level = GREATEST(
-				battery_level - (
+				dd.battery_level - (
 					COALESCE(
-						(ii.properties->>'drain_rate_per_hour')::decimal / 12.0 * 100.0,
-						1.0 / 12.0 * 100.0  -- Default 1.0% per hour if not specified
+						CAST(ii.properties->>'drain_rate_per_hour' AS NUMERIC) / 12.0,
+						1.0 / 12.0  -- Default 1.0% per hour if not specified
 					),
 					0.083  -- Minimum 0.083% per 5min (1% per hour)
 				),
@@ -190,10 +190,10 @@ func (s *Scheduler) drainDeployedScannerBatteries() {
 			updated_at = NOW()
 		FROM gameplay.inventory_items ii
 		WHERE 
-			gameplay.deployed_devices.battery_inventory_id = ii.id
-			AND gameplay.deployed_devices.is_active = true 
-			AND gameplay.deployed_devices.battery_level > 0
-			AND gameplay.deployed_devices.status = 'active'
+			dd.battery_inventory_id = ii.id
+			AND dd.is_active = true 
+			AND dd.battery_level > 0
+			AND dd.status = 'active'
 	`)
 
 	if result.Error != nil {
@@ -215,7 +215,7 @@ func (s *Scheduler) drainDeployedScannerBatteries() {
 			updated_at = NOW()
 		WHERE 
 			is_active = true 
-			AND battery_level = 0
+			AND battery_level <= 0
 			AND status = 'active'
 	`)
 
