@@ -224,6 +224,27 @@ func (s *Service) ScanDeployableDevice(userID uuid.UUID, deviceID uuid.UUID, req
 	// 8. Filtrovať artefakty podľa scanner schopností
 	scanResults := s.filterArtifactsByScanner(allArtifacts, req, &device)
 
+	// 8b. BATTERY CONSUMPTION DURING SCANNING (CURRENTLY DISABLED)
+	// NOTE: We have implemented 5% battery consumption per scan, but it's currently disabled
+	// because we now use passive battery drain via scheduler instead.
+	// If you want to re-enable this, uncomment the following code:
+	/*
+		// 8b. Znížiť battery level (5% za scan)
+		batteryConsumption := 5
+		newBatteryLevel := device.BatteryLevel - batteryConsumption
+		if newBatteryLevel < 0 {
+			newBatteryLevel = 0
+		}
+
+		// Aktualizovať battery level v databáze
+		if err := s.db.Model(&device).Update("battery_level", newBatteryLevel).Error; err != nil {
+			log.Printf("⚠️ Failed to update battery level for device %s: %v", deviceID, err)
+		} else {
+			log.Printf("🔋 Battery consumed: device %s (%s) %d%% → %d%% (-%d%%)",
+				deviceID, device.Name, device.BatteryLevel, newBatteryLevel, batteryConsumption)
+		}
+	*/
+
 	// 9. Aktualizovať cooldown (5 minút) a vypočítať koniec cooldownu
 	cooldownSeconds := 300
 	if err := s.updateScanCooldown(userID, deviceID, cooldownSeconds); err != nil {
