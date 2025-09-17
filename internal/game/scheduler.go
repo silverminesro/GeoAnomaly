@@ -174,19 +174,20 @@ func (s *Scheduler) drainDeployedScannerBatteries() {
 	// drain_per_5min = (drain_rate_per_hour / 12) * 100 (to get percentage)
 
 	// Update battery levels for active deployed scanners using actual battery drain rates
-	// drain_rate_per_hour is in percentage points per hour (e.g., 4.17 = 4.17%/h)
+	// drain_rate_per_hour is in percentage points per hour (e.g., 2.08 = 2.08%/h)
 	// For 5-minute intervals: drain_per_5min = drain_rate_per_hour / 12.0
+	// Use ROUND() for more accurate battery drain, but ensure minimum 0.1% drain per cycle
 	result := s.db.Exec(`
 		UPDATE gameplay.deployed_devices dd
 		SET 
 			battery_level = GREATEST(
-				FLOOR(
+				ROUND(
 					dd.battery_level::numeric - GREATEST(
 						COALESCE(
 							CAST(mi.properties->>'drain_rate_per_hour' AS NUMERIC) / 12.0,
 							1.0 / 12.0  -- Default 1.0% per hour if not specified
 						),
-						0.0833333333  -- Minimum 0.083333% per 5min (1% per hour)
+						0.1  -- Minimum 0.1% per 5min to ensure visible drain
 					)
 				)::int,
 				0
