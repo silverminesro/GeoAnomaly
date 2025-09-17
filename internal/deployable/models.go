@@ -10,9 +10,10 @@ import (
 // DeployedDevice reprezentuje zariadenie umiestnené na mape
 type DeployedDevice struct {
 	ID                 uuid.UUID         `json:"id" db:"id" gorm:"primaryKey"`
-	OwnerID            uuid.UUID         `json:"owner_id" db:"owner_id"`
-	DeviceInventoryID  uuid.UUID         `json:"device_inventory_id" db:"device_inventory_id"`   // ID zariadenia z inventára
-	BatteryInventoryID uuid.UUID         `json:"battery_inventory_id" db:"battery_inventory_id"` // ID batérie z inventára
+	OwnerID            uuid.UUID         `json:"owner_id" db:"owner_id" gorm:"not null"`                       // FK na auth.users je v DB
+	DeviceInventoryID  uuid.UUID         `json:"device_inventory_id" db:"device_inventory_id" gorm:"not null"` // FK na gameplay.inventory_items je v DB
+	BatteryInventoryID *uuid.UUID        `json:"battery_inventory_id" db:"battery_inventory_id"`               // FK na gameplay.inventory_items je v DB (nullable pre vybraté batérie)
+	BatteryStatus      string            `json:"battery_status" db:"battery_status"`                           // installed, removed, depleted
 	Name               string            `json:"name" db:"name"`
 	Latitude           float64           `json:"latitude" db:"latitude"`
 	Longitude          float64           `json:"longitude" db:"longitude"`

@@ -522,3 +522,33 @@ func (h *Handler) GetMapMarkers(c *gin.Context) {
 	// 5. Vrátiť markery
 	c.JSON(http.StatusOK, markers)
 }
+
+// RemoveBattery - vyberie vybitú batériu z zariadenia
+func (h *Handler) RemoveBattery(c *gin.Context) {
+	userID, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+		return
+	}
+
+	userUUID, ok := userID.(uuid.UUID)
+	if !ok {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Invalid user ID format"})
+		return
+	}
+
+	deviceIDStr := c.Param("deviceId")
+	deviceID, err := uuid.Parse(deviceIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid device ID format"})
+		return
+	}
+
+	response, err := h.service.RemoveBattery(deviceID, userUUID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, response)
+}

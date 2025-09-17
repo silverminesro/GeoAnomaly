@@ -59,7 +59,8 @@ func (s *Service) DeployDevice(userID uuid.UUID, req *DeployRequest) (*DeployRes
 		ID:                 uuid.New(),
 		OwnerID:            userID,
 		DeviceInventoryID:  req.DeviceInventoryID,
-		BatteryInventoryID: req.BatteryInventoryID,
+		BatteryInventoryID: &req.BatteryInventoryID, // Konvertovať na pointer
+		BatteryStatus:      "installed",             // Nový stĺpec
 		Name:               req.Name,
 		Latitude:           req.Latitude,
 		Longitude:          req.Longitude,
@@ -1200,4 +1201,79 @@ func (s *Service) determineDeviceStatusAndIcon(device DeployedDevice) (status, i
 
 	// Zelená - aktívne zariadenie
 	return "active", "scanner_green"
+}
+
+// RemoveBatteryResponse - odpoveď pre vybratie batérie
+type RemoveBatteryResponse struct {
+	Success bool            `json:"success"`
+	Message string          `json:"message"`
+	Device  *DeployedDevice `json:"device,omitempty"`
+}
+
+// RemoveBattery - vyberie vybitú batériu z zariadenia
+func (s *Service) RemoveBattery(deviceID uuid.UUID, userID uuid.UUID) (*RemoveBatteryResponse, error) {
+	// 1. Načítať zariadenie
+	var device DeployedDevice
+	if err := s.db.Where("id = ? AND owner_id = ? AND is_active = true", deviceID, userID).First(&device).Error; err != nil {
+		return &RemoveBatteryResponse{
+			Success: false,
+			Message: "Zariadenie nebolo nájdené alebo nepatrí vám",
+		}, nil
+	}
+
+	// 2. Skontrolovať, či je batéria vybitá
+	if device.BatteryLevel > 0 {
+		return &RemoveBatteryResponse{
+			Success: false,
+			Message: "Batéria nie je vybitá, nemôže sa vybrať",
+		}, nil
+	}
+
+	// 3. Skontrolovať, či má zariadenie batériu
+	if device.BatteryInventoryID == nil {
+		return &RemoveBatteryResponse{
+			Success: false,
+			Message: "Zariadenie nemá inštalovanú batériu",
+		}, nil
+	}
+
+	// 4. Vrátiť batériu do inventára s 0% batériou
+	batteryInventoryID := *device.BatteryInventoryID
+
+	// Aktualizovať batériu v inventári na 0%
+	if err := s.db.Model(&InventoryItem{}).Where("id = ?", batteryInventoryID).Update("properties", `{"battery_level": 0}`).Error; err != nil {
+		log.Printf("⚠️ Failed to update battery in inventory: %v", err)
+		return &RemoveBatteryResponse{
+			Success: false,
+			Message: "Chyba pri aktualizácii batérie v inventári",
+		}, nil
+	}
+
+	// 5. Odstrániť batériu zo zariadenia
+	if err := s.db.Model(&device).Updates(map[string]interface{}{
+		"battery_inventory_id": nil,
+		"battery_status":       "removed",
+		"battery_level":        0,
+		"updated_at":           time.Now(),
+	}).Error; err != nil {
+		log.Printf("⚠️ Failed to remove battery from device: %v", err)
+		return &RemoveBatteryResponse{
+			Success: false,
+			Message: "Chyba pri odstraňovaní batérie zo zariadenia",
+		}, nil
+	}
+
+	// 6. Načítať aktualizované zariadenie
+	var updatedDevice DeployedDevice
+	if err := s.db.Where("id = ?", deviceID).First(&updatedDevice).Error; err != nil {
+		log.Printf("⚠️ Failed to load updated device: %v", err)
+	}
+
+	log.Printf("🔋 Battery removed from device %s (%s) by user %s", deviceID, device.Name, userID)
+
+	return &RemoveBatteryResponse{
+		Success: true,
+		Message: "Batéria bola úspešne vybratá a vrátená do inventára s 0% batériou",
+		Device:  &updatedDevice,
+	}, nil
 }
