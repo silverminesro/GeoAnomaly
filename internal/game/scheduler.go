@@ -200,6 +200,7 @@ func (s *Scheduler) drainDeployedScannerBatteries() {
 			AND dd.is_active = true 
 			AND dd.battery_level > 0
 			AND dd.status = 'active'
+			AND dd.battery_status = 'installed'
 	`)
 
 	if result.Error != nil {
