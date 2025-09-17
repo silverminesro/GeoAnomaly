@@ -180,7 +180,7 @@ func (s *Scheduler) drainDeployedScannerBatteries() {
 		UPDATE gameplay.deployed_devices dd
 		SET 
 			battery_level = GREATEST(
-				ROUND(
+				FLOOR(
 					dd.battery_level::numeric - GREATEST(
 						COALESCE(
 							CAST(mi.properties->>'drain_rate_per_hour' AS NUMERIC) / 12.0,
