@@ -134,7 +134,7 @@ func main() {
 	setupGracefulShutdown()
 
 	// Setup routes with security middleware and R2 client
-	router := SetupRoutes(db, redisClient, r2Client)
+	router := setupRoutes(db, redisClient, r2Client)
 
 	// Get server configuration from .env
 	port := GetEnvVar("PORT", "8080")

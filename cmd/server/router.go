@@ -26,7 +26,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func SetupRoutes(db *gorm.DB, redisClient *redis.Client, r2Client *media.R2Client) *gin.Engine {
+func setupRoutes(db *gorm.DB, redisClient *redis.Client, r2Client *media.R2Client) *gin.Engine {
 	gin.SetMode(gin.ReleaseMode)
 
 	router := gin.New()
