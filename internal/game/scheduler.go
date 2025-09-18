@@ -335,18 +335,15 @@ func (s *Scheduler) updateBatteryChargingProgress() {
 		return
 	}
 
-	// Update battery charge to 100% for completed sessions
+	// Update battery charge to 100% for completed sessions (idempotent - safe to run multiple times)
 	batteryUpdateQuery := `
-		UPDATE gameplay.inventory_items 
-		SET properties = jsonb_set(COALESCE(properties,'{}'::jsonb), '{charge_pct}', '100'::jsonb, true),
+		UPDATE gameplay.inventory_items ii
+		SET properties = jsonb_set(COALESCE(ii.properties,'{}'::jsonb), '{charge_pct}', '100'::jsonb, true),
 		    updated_at = $1
-		WHERE id IN (
-			SELECT battery_instance_id 
-			FROM laboratory.battery_charging_sessions 
-			WHERE status = 'completed' 
-			AND battery_instance_id IS NOT NULL
-			AND updated_at >= $1 - INTERVAL '1 minute'
-		)
+		FROM laboratory.battery_charging_sessions s
+		WHERE s.status = 'completed'
+		  AND s.battery_instance_id = ii.id
+		  AND COALESCE((ii.properties->>'charge_pct')::int, 0) < 100
 	`
 
 	batteryResult := s.db.Exec(batteryUpdateQuery, now)
