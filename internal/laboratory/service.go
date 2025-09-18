@@ -600,11 +600,16 @@ func (s *Service) GetChargingSlots(userID uuid.UUID) ([]ChargingSlot, error) {
 		slotNumber := i + 1
 		activeSession := slotToSession[slotNumber]
 
+		var batteryInstanceID *uuid.UUID
+		if activeSession != nil {
+			batteryInstanceID = activeSession.BatteryInstanceID
+		}
+
 		slots[i] = ChargingSlot{
 			SlotNumber:        slotNumber,
 			IsAvailable:       activeSession == nil,
 			ActiveSession:     activeSession,
-			BatteryInstanceID: activeSession.BatteryInstanceID,
+			BatteryInstanceID: batteryInstanceID,
 		}
 	}
 
