@@ -468,6 +468,7 @@ func setupRoutes(db *gorm.DB, redisClient *redis.Client, r2Client *media.R2Clien
 			laboratoryRoutes.GET("/recipes", laboratoryHandler.RequireLaboratoryPlaced(), laboratoryHandler.RequireCraftingUnlocked(), laboratoryHandler.GetCraftingRecipes)
 
 			// Battery Charging (Level 1+)
+			laboratoryRoutes.GET("/battery/available", laboratoryHandler.RequireLaboratoryPlaced(), laboratoryHandler.GetAvailableBatteries)
 			laboratoryRoutes.POST("/battery/charge", laboratoryHandler.RequireLaboratoryPlaced(), laboratoryHandler.StartBatteryCharging)
 			laboratoryRoutes.GET("/battery/charging-status", laboratoryHandler.RequireLaboratoryPlaced(), laboratoryHandler.GetBatteryChargingStatus)
 			laboratoryRoutes.POST("/battery/complete/:id", laboratoryHandler.RequireLaboratoryPlaced(), laboratoryHandler.CompleteBatteryCharging)
