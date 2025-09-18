@@ -26,7 +26,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func setupRoutes(db *gorm.DB, redisClient *redis.Client, r2Client *media.R2Client) *gin.Engine {
+func SetupRoutes(db *gorm.DB, redisClient *redis.Client, r2Client *media.R2Client) *gin.Engine {
 	gin.SetMode(gin.ReleaseMode)
 
 	router := gin.New()
@@ -116,10 +116,10 @@ func setupRoutes(db *gorm.DB, redisClient *redis.Client, r2Client *media.R2Clien
 		c.JSON(200, gin.H{
 			"name":        "GeoAnomaly Backend",
 			"version":     "1.0.0",
-			"environment": getEnvVar("APP_ENV", "development"),
-			"uptime":      time.Since(startTime).String(),
+			"environment": GetEnvVar("APP_ENV", "development"),
+			"uptime":      time.Since(StartTime).String(),
 			"developer":   "silverminesro",
-			"database":    getEnvVar("DB_NAME", "geoanomaly") + "@" + getEnvVar("DB_HOST", "localhost"),
+			"database":    GetEnvVar("DB_NAME", "geoanomaly") + "@" + GetEnvVar("DB_HOST", "localhost"),
 			"structure":   "unified",
 			"security":    "🛡️ CONNECT attacks blocked",
 			"redis":       redisStatus,
@@ -127,7 +127,7 @@ func setupRoutes(db *gorm.DB, redisClient *redis.Client, r2Client *media.R2Clien
 	})
 
 	// API v1 group
-	v1 := router.Group("/api/" + getEnvVar("API_VERSION", "v1"))
+	v1 := router.Group("/api/" + GetEnvVar("API_VERSION", "v1"))
 	{
 		// Basic test endpoints
 		v1.GET("/test", func(c *gin.Context) {
@@ -265,23 +265,23 @@ func setupRoutes(db *gorm.DB, redisClient *redis.Client, r2Client *media.R2Clien
 			c.JSON(200, gin.H{
 				"server": gin.H{
 					"status":      "running",
-					"uptime":      time.Since(startTime).String(),
-					"environment": getEnvVar("APP_ENV", "development"),
+					"uptime":      time.Since(StartTime).String(),
+					"environment": GetEnvVar("APP_ENV", "development"),
 					"version":     "1.0.0",
 					"structure":   "unified",
 					"security":    "🛡️ active",
 				},
 				"database": gin.H{
 					"status": dbStatus,
-					"host":   getEnvVar("DB_HOST", "localhost"),
-					"name":   getEnvVar("DB_NAME", "geoanomaly"),
+					"host":   GetEnvVar("DB_HOST", "localhost"),
+					"name":   GetEnvVar("DB_NAME", "geoanomaly"),
 				},
 				"redis": gin.H{
 					"status": redisStatus,
 				},
 				"r2_storage": gin.H{
 					"status": r2Status,
-					"bucket": getEnvVar("R2_BUCKET_NAME", ""),
+					"bucket": GetEnvVar("R2_BUCKET_NAME", ""),
 				},
 				"security": gin.H{
 					"connect_blocking": "active",
@@ -469,6 +469,7 @@ func setupRoutes(db *gorm.DB, redisClient *redis.Client, r2Client *media.R2Clien
 
 			// Battery Charging (Level 1+)
 			laboratoryRoutes.GET("/battery/available", laboratoryHandler.RequireLaboratoryPlaced(), laboratoryHandler.GetAvailableBatteries)
+			laboratoryRoutes.GET("/battery/slots", laboratoryHandler.RequireLaboratoryPlaced(), laboratoryHandler.GetChargingSlots)
 			laboratoryRoutes.POST("/battery/charge", laboratoryHandler.RequireLaboratoryPlaced(), laboratoryHandler.StartBatteryCharging)
 			laboratoryRoutes.GET("/battery/charging-status", laboratoryHandler.RequireLaboratoryPlaced(), laboratoryHandler.GetBatteryChargingStatus)
 			laboratoryRoutes.POST("/battery/complete/:id", laboratoryHandler.RequireLaboratoryPlaced(), laboratoryHandler.CompleteBatteryCharging)
@@ -672,7 +673,7 @@ func setupRoutes(db *gorm.DB, redisClient *redis.Client, r2Client *media.R2Clien
 				"total_artifacts": 0,
 				"total_gear":      0,
 				"inventory_items": inventoryCount,
-				"server_uptime":   time.Since(startTime).String(),
+				"server_uptime":   time.Since(StartTime).String(),
 				"last_cleanup":    "never",
 				"security_status": "🛡️ active",
 			})

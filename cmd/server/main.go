@@ -25,7 +25,7 @@ import (
 var (
 	db          *gorm.DB
 	redisClient *redis.Client
-	startTime   time.Time
+	StartTime   time.Time
 	scheduler   *game.Scheduler
 	r2Client    *media.R2Client // Pridané pre R2
 )
@@ -38,7 +38,7 @@ func min(a, b int) int {
 }
 
 func init() {
-	startTime = time.Now()
+	StartTime = time.Now()
 
 	// Load environment variables from .env file
 	if err := godotenv.Load(); err != nil {
@@ -53,7 +53,7 @@ func init() {
 
 func main() {
 	log.Println("🚀 Starting GeoAnomaly Backend Server...")
-	log.Printf("⏰ Start Time: %s", startTime.Format("2006-01-02 15:04:05"))
+	log.Printf("⏰ Start Time: %s", StartTime.Format("2006-01-02 15:04:05"))
 	log.Printf("👤 Started by: silverminesro")
 
 	// Test our .env configuration
@@ -96,10 +96,10 @@ func main() {
 	log.Println("🖼️  Initializing Cloudflare R2 client...")
 
 	// ✅ PRIDANÉ: Debug R2 credentials (bezpečne)
-	accountID := getEnvVar("R2_ACCOUNT_ID", "")
-	accessKeyID := getEnvVar("R2_ACCESS_KEY_ID", "")
-	secretAccessKey := getEnvVar("R2_SECRET_ACCESS_KEY", "")
-	bucketName := getEnvVar("R2_BUCKET_NAME", "geoanomaly")
+	accountID := GetEnvVar("R2_ACCOUNT_ID", "")
+	accessKeyID := GetEnvVar("R2_ACCESS_KEY_ID", "")
+	secretAccessKey := GetEnvVar("R2_SECRET_ACCESS_KEY", "")
+	bucketName := GetEnvVar("R2_BUCKET_NAME", "geoanomaly")
 
 	log.Printf("🔑 R2_ACCOUNT_ID: %s", accountID)
 	log.Printf("🔑 R2_ACCESS_KEY_ID: %s", accessKeyID)
@@ -134,11 +134,11 @@ func main() {
 	setupGracefulShutdown()
 
 	// Setup routes with security middleware and R2 client
-	router := setupRoutes(db, redisClient, r2Client)
+	router := SetupRoutes(db, redisClient, r2Client)
 
 	// Get server configuration from .env
-	port := getEnvVar("PORT", "8080")
-	host := getEnvVar("HOST", "localhost")
+	port := GetEnvVar("PORT", "8080")
+	host := GetEnvVar("HOST", "localhost")
 
 	// Print server information
 	printServerInfo(host, port)
@@ -160,8 +160,8 @@ func main() {
 
 // Initialize Redis connection
 func initRedis() *redis.Client {
-	redisAddr := getEnvVar("REDIS_ADDR", "localhost:6379")
-	redisPassword := getEnvVar("REDIS_PASSWORD", "")
+	redisAddr := GetEnvVar("REDIS_ADDR", "localhost:6379")
+	redisPassword := GetEnvVar("REDIS_PASSWORD", "")
 	redisDB := 0
 
 	log.Printf("🔌 Connecting to Redis at %s...", redisAddr)
@@ -223,13 +223,13 @@ func initDB() (*gorm.DB, error) {
 	// Build connection string from .env
 	dsn := fmt.Sprintf(
 		"host=%s user=%s password=%s dbname=%s port=%s sslmode=%s TimeZone=%s",
-		getEnvVar("DB_HOST", "localhost"),
-		getEnvVar("DB_USER", "postgres"),
-		getEnvVar("DB_PASSWORD", ""),
-		getEnvVar("DB_NAME", "geoanomaly"),
-		getEnvVar("DB_PORT", "5432"),
-		getEnvVar("DB_SSLMODE", "disable"),
-		getEnvVar("DB_TIMEZONE", "UTC"),
+		GetEnvVar("DB_HOST", "localhost"),
+		GetEnvVar("DB_USER", "postgres"),
+		GetEnvVar("DB_PASSWORD", ""),
+		GetEnvVar("DB_NAME", "geoanomaly"),
+		GetEnvVar("DB_PORT", "5432"),
+		GetEnvVar("DB_SSLMODE", "disable"),
+		GetEnvVar("DB_TIMEZONE", "UTC"),
 	)
 
 	log.Println("🔌 Connecting to database...")
@@ -245,19 +245,19 @@ func testEnvConfig() error {
 	log.Println("🔍 Testing .env configuration...")
 
 	// Test database config
-	dbHost := getEnvVar("DB_HOST", "")
-	dbUser := getEnvVar("DB_USER", "")
-	dbPassword := getEnvVar("DB_PASSWORD", "")
-	dbName := getEnvVar("DB_NAME", "")
+	dbHost := GetEnvVar("DB_HOST", "")
+	dbUser := GetEnvVar("DB_USER", "")
+	dbPassword := GetEnvVar("DB_PASSWORD", "")
+	dbName := GetEnvVar("DB_NAME", "")
 
 	if dbHost == "" || dbUser == "" || dbPassword == "" || dbName == "" {
 		return fmt.Errorf("missing required database configuration in .env")
 	}
 
-	log.Printf("📊 Database: %s@%s:%s/%s", dbUser, dbHost, getEnvVar("DB_PORT", "5432"), dbName)
+	log.Printf("📊 Database: %s@%s:%s/%s", dbUser, dbHost, GetEnvVar("DB_PORT", "5432"), dbName)
 
 	// Test JWT config
-	jwtSecret := getEnvVar("JWT_SECRET", "")
+	jwtSecret := GetEnvVar("JWT_SECRET", "")
 	if len(jwtSecret) < 32 {
 		return fmt.Errorf("JWT_SECRET must be at least 32 characters long")
 	}
@@ -364,7 +364,7 @@ func setDefaultEnvVars() {
 	}
 }
 
-func getEnvVar(key, defaultValue string) string {
+func GetEnvVar(key, defaultValue string) string {
 	if value := os.Getenv(key); value != "" {
 		return value
 	}
@@ -372,13 +372,13 @@ func getEnvVar(key, defaultValue string) string {
 }
 
 func printServerInfo(host, port string) {
-	uptime := time.Since(startTime).Round(time.Second)
+	uptime := time.Since(StartTime).Round(time.Second)
 
 	// Get config from .env
-	dbName := getEnvVar("DB_NAME", "geoanomaly")
-	dbHost := getEnvVar("DB_HOST", "localhost")
-	redisAddr := getEnvVar("REDIS_ADDR", "localhost:6379")
-	jwtSecret := getEnvVar("JWT_SECRET", "")
+	dbName := GetEnvVar("DB_NAME", "geoanomaly")
+	dbHost := GetEnvVar("DB_HOST", "localhost")
+	redisAddr := GetEnvVar("REDIS_ADDR", "localhost:6379")
+	jwtSecret := GetEnvVar("JWT_SECRET", "")
 
 	separator := strings.Repeat("=", 60)
 
