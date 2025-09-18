@@ -140,6 +140,27 @@ func (s *Service) GetLaboratoryStatus(userID uuid.UUID) (*LaboratoryStatusRespon
 		return nil, fmt.Errorf("failed to get active charging: %w", err)
 	}
 
+	// Calculate progress for each charging session
+	now := time.Now()
+	for i := range activeCharging {
+		session := &activeCharging[i]
+		if session.Status == "active" {
+			// Calculate progress based on time elapsed
+			totalDuration := session.EndTime.Sub(session.StartTime)
+			elapsed := now.Sub(session.StartTime)
+
+			if totalDuration > 0 {
+				progress := float64(elapsed) / float64(totalDuration) * 100.0
+				if progress > 100.0 {
+					progress = 100.0
+				}
+				session.Progress = progress
+			} else {
+				session.Progress = 0.0
+			}
+		}
+	}
+
 	// Get active research projects (Level 2+)
 	var activeResearch []ResearchProject
 	if lab.ResearchUnlocked {
@@ -740,6 +761,7 @@ func (s *Service) StartBatteryCharging(userID uuid.UUID, req *StartChargingReque
 			Status:            "active",
 			ChargingSpeed:     speedMultiplier,
 			CostCredits:       cost,
+			Progress:          0.0,
 		}
 
 		if err := tx.Create(&newSession).Error; err != nil {
@@ -788,6 +810,7 @@ func (s *Service) CompleteBatteryCharging(userID uuid.UUID, sessionID uuid.UUID)
 
 		// Update session
 		session.Status = "completed"
+		session.Progress = 100.0
 
 		if err := tx.Save(&session).Error; err != nil {
 			return fmt.Errorf("failed to update charging session: %w", err)

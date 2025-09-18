@@ -161,6 +161,7 @@ type BatteryChargingSession struct {
 	Status            string     `json:"status" gorm:"type:varchar(20);not null;default:'active';check:status IN ('active', 'completed', 'failed', 'cancelled')"`
 	ChargingSpeed     float64    `json:"charging_speed" gorm:"not null;default:1.0"`
 	CostCredits       int        `json:"cost_credits" gorm:"not null;default:0"`
+	Progress          float64    `json:"progress" gorm:"not null;default:0.0;check:progress >= 0.0 AND progress <= 100.0"`
 	CreatedAt         time.Time  `json:"created_at" gorm:"autoCreateTime"`
 
 	// Relations
