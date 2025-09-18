@@ -519,6 +519,7 @@ func (s *Service) GetAvailableBatteries(userID uuid.UUID) ([]AvailableBattery, e
 		WHERE ii.user_id = ? 
 			AND ii.item_type = 'scanner_battery' 
 			AND ii.deleted_at IS NULL
+			AND COALESCE(CAST(ii.properties->>'charge_pct' AS INTEGER), 100) = 0
 		ORDER BY ii.acquired_at DESC
 	`
 
@@ -727,17 +728,18 @@ func (s *Service) StartBatteryCharging(userID uuid.UUID, req *StartChargingReque
 
 		// Create charging session
 		newSession := BatteryChargingSession{
-			UserID:        userID,
-			LaboratoryID:  lab.ID,
-			SlotNumber:    slotNumber,
-			BatteryType:   req.BatteryType,
-			DeviceType:    req.DeviceType,
-			DeviceID:      req.DeviceID,
-			StartTime:     time.Now(),
-			EndTime:       time.Now().Add(duration),
-			Status:        "active",
-			ChargingSpeed: speedMultiplier,
-			CostCredits:   cost,
+			UserID:            userID,
+			LaboratoryID:      lab.ID,
+			SlotNumber:        slotNumber,
+			BatteryType:       req.BatteryType,
+			DeviceType:        req.DeviceType,
+			DeviceID:          req.DeviceID,
+			BatteryInstanceID: req.BatteryInstanceID,
+			StartTime:         time.Now(),
+			EndTime:           time.Now().Add(duration),
+			Status:            "active",
+			ChargingSpeed:     speedMultiplier,
+			CostCredits:       cost,
 		}
 
 		if err := tx.Create(&newSession).Error; err != nil {
