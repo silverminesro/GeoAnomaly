@@ -328,7 +328,7 @@ func (h *Handler) GetChargingSlots(c *gin.Context) {
 	})
 }
 
-// GetBatteryChargingStatus returns charging session status
+// GetBatteryChargingStatus returns charging session status with real-time progress
 // GET /api/v1/laboratory/battery/charging-status
 func (h *Handler) GetBatteryChargingStatus(c *gin.Context) {
 	userID, err := h.getUserIDFromContext(c)
@@ -337,7 +337,7 @@ func (h *Handler) GetBatteryChargingStatus(c *gin.Context) {
 		return
 	}
 
-	// Get all active charging sessions
+	// Get all active charging sessions with progress calculation
 	status, err := h.service.GetLaboratoryStatus(userID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get charging status: " + err.Error()})
