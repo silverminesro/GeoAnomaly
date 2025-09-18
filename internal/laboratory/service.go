@@ -572,6 +572,45 @@ func (s *Service) GetAvailableBatteries(userID uuid.UUID) ([]AvailableBattery, e
 	return batteries, nil
 }
 
+// GetChargingSlots returns all charging slots with their current status
+func (s *Service) GetChargingSlots(userID uuid.UUID) ([]ChargingSlot, error) {
+	// Get laboratory to determine total slots
+	var lab Laboratory
+	if err := s.db.Where("user_id = ?", userID).First(&lab).Error; err != nil {
+		return nil, fmt.Errorf("failed to get laboratory: %w", err)
+	}
+
+	totalSlots := lab.BaseChargingSlots + lab.ExtraChargingSlots
+	slots := make([]ChargingSlot, totalSlots)
+
+	// Get active charging sessions
+	var activeSessions []BatteryChargingSession
+	if err := s.db.Where("user_id = ? AND status = 'active'", userID).Find(&activeSessions).Error; err != nil {
+		return nil, fmt.Errorf("failed to get active charging sessions: %w", err)
+	}
+
+	// Create a map of slot numbers to active sessions
+	slotToSession := make(map[int]*BatteryChargingSession)
+	for i := range activeSessions {
+		slotToSession[activeSessions[i].SlotNumber] = &activeSessions[i]
+	}
+
+	// Initialize all slots
+	for i := 0; i < totalSlots; i++ {
+		slotNumber := i + 1
+		activeSession := slotToSession[slotNumber]
+
+		slots[i] = ChargingSlot{
+			SlotNumber:        slotNumber,
+			IsAvailable:       activeSession == nil,
+			ActiveSession:     activeSession,
+			BatteryInstanceID: activeSession.BatteryInstanceID,
+		}
+	}
+
+	return slots, nil
+}
+
 // StartBatteryCharging starts charging a battery
 func (s *Service) StartBatteryCharging(userID uuid.UUID, req *StartChargingRequest) (*BatteryChargingSession, error) {
 	var session *BatteryChargingSession

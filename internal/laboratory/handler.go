@@ -144,9 +144,7 @@ func (h *Handler) GetResearchStatus(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"active_research": status.ActiveResearch,
-	})
+	c.JSON(http.StatusOK, status.ActiveResearch)
 }
 
 // CompleteResearch completes a research project
@@ -226,9 +224,7 @@ func (h *Handler) GetCraftingStatus(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"active_crafting": status.ActiveCrafting,
-	})
+	c.JSON(http.StatusOK, status.ActiveCrafting)
 }
 
 // CompleteCrafting completes a crafting session
@@ -311,6 +307,27 @@ func (h *Handler) StartBatteryCharging(c *gin.Context) {
 	})
 }
 
+// GetChargingSlots returns charging slots with their status
+// GET /api/v1/laboratory/battery/slots
+func (h *Handler) GetChargingSlots(c *gin.Context) {
+	userID, err := h.getUserIDFromContext(c)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	slots, err := h.service.GetChargingSlots(userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get charging slots: " + err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"slots":   slots,
+	})
+}
+
 // GetBatteryChargingStatus returns charging session status
 // GET /api/v1/laboratory/battery/charging-status
 func (h *Handler) GetBatteryChargingStatus(c *gin.Context) {
@@ -327,9 +344,7 @@ func (h *Handler) GetBatteryChargingStatus(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"active_charging": status.ActiveCharging,
-	})
+	c.JSON(http.StatusOK, status.ActiveCharging)
 }
 
 // CompleteBatteryCharging completes a charging session

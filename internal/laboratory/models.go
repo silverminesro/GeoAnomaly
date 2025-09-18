@@ -344,6 +344,14 @@ type AvailableBattery struct {
 	Properties    JSONB     `json:"properties"`
 }
 
+// ChargingSlot represents a charging slot with its current status
+type ChargingSlot struct {
+	SlotNumber        int                     `json:"slot_number"`
+	IsAvailable       bool                    `json:"is_available"`
+	ActiveSession     *BatteryChargingSession `json:"active_session,omitempty"`
+	BatteryInstanceID *uuid.UUID              `json:"battery_instance_id,omitempty"`
+}
+
 // PurchaseSlotRequest represents extra slot purchase request
 type PurchaseSlotRequest struct {
 	EssenceCost int `json:"essence_cost" binding:"required,min=1"`
