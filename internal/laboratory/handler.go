@@ -262,6 +262,27 @@ func (h *Handler) CompleteCrafting(c *gin.Context) {
 // 5. BATTERY CHARGING ENDPOINTS (Level 1+)
 // =============================================
 
+// GetAvailableBatteries returns available batteries from user inventory
+// GET /api/v1/laboratory/battery/available
+func (h *Handler) GetAvailableBatteries(c *gin.Context) {
+	userID, err := h.getUserIDFromContext(c)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	batteries, err := h.service.GetAvailableBatteries(userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get available batteries: " + err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success":   true,
+		"batteries": batteries,
+	})
+}
+
 // StartBatteryCharging starts charging a battery
 // POST /api/v1/laboratory/battery/charge
 func (h *Handler) StartBatteryCharging(c *gin.Context) {

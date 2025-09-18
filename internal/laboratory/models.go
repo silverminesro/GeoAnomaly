@@ -332,6 +332,18 @@ type StartChargingRequest struct {
 	BatteryInstanceID *uuid.UUID `json:"battery_instance_id,omitempty"`
 }
 
+// AvailableBattery represents a battery available for charging from user inventory
+type AvailableBattery struct {
+	InventoryID   uuid.UUID `json:"inventory_id"`
+	BatteryType   string    `json:"battery_type"`
+	BatteryName   string    `json:"battery_name"`
+	CurrentCharge int       `json:"current_charge"`        // 0-100%
+	IsInUse       bool      `json:"is_in_use"`             // true if currently used in deployed device
+	DeviceName    *string   `json:"device_name,omitempty"` // name of device if in use
+	AcquiredAt    time.Time `json:"acquired_at"`
+	Properties    JSONB     `json:"properties"`
+}
+
 // PurchaseSlotRequest represents extra slot purchase request
 type PurchaseSlotRequest struct {
 	EssenceCost int `json:"essence_cost" binding:"required,min=1"`
@@ -385,6 +397,27 @@ type Artifact struct {
 	ID uuid.UUID `json:"id" gorm:"type:uuid;primaryKey"`
 }
 
+// InventoryItem represents an inventory item (placeholder - should be imported from gameplay package)
+type InventoryItem struct {
+	ID         uuid.UUID  `json:"id" gorm:"type:uuid;primaryKey"`
+	UserID     uuid.UUID  `json:"user_id" gorm:"type:uuid;not null"`
+	ItemType   string     `json:"item_type" gorm:"type:varchar(50);not null"`
+	ItemID     uuid.UUID  `json:"item_id" gorm:"type:uuid;not null"`
+	Properties string     `json:"properties" gorm:"type:jsonb;default:'{}'::jsonb"`
+	Quantity   int        `json:"quantity" gorm:"default:1"`
+	AcquiredAt *time.Time `json:"acquired_at,omitempty"`
+	DeletedAt  *time.Time `json:"deleted_at,omitempty" gorm:"index"`
+}
+
+// DeployedDevice represents a deployed device (placeholder - should be imported from deployable package)
+type DeployedDevice struct {
+	ID                 uuid.UUID  `json:"id" gorm:"type:uuid;primaryKey"`
+	OwnerID            uuid.UUID  `json:"owner_id" gorm:"type:uuid;not null"`
+	DeviceInventoryID  uuid.UUID  `json:"device_inventory_id" gorm:"type:uuid;not null"`
+	BatteryInventoryID *uuid.UUID `json:"battery_inventory_id,omitempty" gorm:"type:uuid"`
+	IsActive           bool       `json:"is_active" gorm:"not null;default:true"`
+}
+
 // =============================================
 // 9. TABLE NAMES
 // =============================================
@@ -405,3 +438,5 @@ func (LaboratoryXP) TableName() string           { return "laboratory.laboratory
 func (LaboratoryRelocation) TableName() string   { return "laboratory.laboratory_relocations" }
 func (User) TableName() string                   { return "auth.users" }
 func (Artifact) TableName() string               { return "gameplay.artifacts" }
+func (InventoryItem) TableName() string          { return "gameplay.inventory_items" }
+func (DeployedDevice) TableName() string         { return "gameplay.deployed_devices" }

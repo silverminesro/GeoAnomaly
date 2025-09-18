@@ -1,6 +1,7 @@
 package laboratory
 
 import (
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -491,6 +492,86 @@ func (s *Service) CompleteCrafting(userID uuid.UUID, sessionID uuid.UUID) error 
 // 5. BATTERY CHARGING SYSTEM (Level 1+)
 // =============================================
 
+// GetAvailableBatteries returns batteries available for charging from user inventory
+func (s *Service) GetAvailableBatteries(userID uuid.UUID) ([]AvailableBattery, error) {
+	var batteries []AvailableBattery
+
+	// Query to get all scanner batteries from user inventory
+	query := `
+		SELECT 
+			ii.id AS inventory_id,
+			ii.properties,
+			ii.acquired_at,
+			-- Check if battery is currently in use
+			dd.id IS NOT NULL as is_in_use,
+			dd.name as device_name,
+			-- Get battery type from market items
+			mi.name as battery_name,
+			mi.properties->>'drain_rate_per_hour' as battery_type,
+			-- Get current charge from properties
+			COALESCE(
+				CAST(ii.properties->>'charge_pct' AS INTEGER),
+				100
+			) as current_charge
+		FROM gameplay.inventory_items ii
+		JOIN market.market_items mi ON ii.item_id = mi.id
+		LEFT JOIN gameplay.deployed_devices dd ON dd.battery_inventory_id = ii.id AND dd.is_active = TRUE
+		WHERE ii.user_id = ? 
+			AND ii.item_type = 'scanner_battery' 
+			AND ii.deleted_at IS NULL
+		ORDER BY ii.acquired_at DESC
+	`
+
+	rows, err := s.db.Raw(query, userID).Rows()
+	if err != nil {
+		return nil, fmt.Errorf("failed to query available batteries: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var battery AvailableBattery
+		var propertiesStr string
+		var batteryTypeStr string
+		var deviceName *string
+
+		if err := rows.Scan(
+			&battery.InventoryID,
+			&propertiesStr,
+			&battery.AcquiredAt,
+			&battery.IsInUse,
+			&deviceName,
+			&battery.BatteryName,
+			&batteryTypeStr,
+			&battery.CurrentCharge,
+		); err != nil {
+			return nil, fmt.Errorf("failed to scan battery row: %w", err)
+		}
+
+		// Parse properties JSON
+		if err := json.Unmarshal([]byte(propertiesStr), &battery.Properties); err != nil {
+			// If parsing fails, use empty JSONB
+			battery.Properties = make(JSONB)
+		}
+
+		// Determine battery type from drain rate
+		switch batteryTypeStr {
+		case "4.17": // Basic (24h)
+			battery.BatteryType = "basic"
+		case "2.08": // Advanced (48h)
+			battery.BatteryType = "advanced"
+		case "0.83": // Military (120h)
+			battery.BatteryType = "military"
+		default:
+			battery.BatteryType = "unknown"
+		}
+
+		battery.DeviceName = deviceName
+		batteries = append(batteries, battery)
+	}
+
+	return batteries, nil
+}
+
 // StartBatteryCharging starts charging a battery
 func (s *Service) StartBatteryCharging(userID uuid.UUID, req *StartChargingRequest) (*BatteryChargingSession, error) {
 	var session *BatteryChargingSession
@@ -563,8 +644,42 @@ func (s *Service) StartBatteryCharging(userID uuid.UUID, req *StartChargingReque
 		speedMultiplier := 1.0 + float64(lab.Level-1)*0.5 // Level 2: 1.5x, Level 3: 2.0x
 		duration = time.Duration(float64(duration) / speedMultiplier)
 
-		// TODO: Check if user has battery to charge
-		// This would require integration with inventory system
+		// Validate battery instance if provided
+		if req.BatteryInstanceID != nil {
+			// Check if user owns the battery and it's not in use
+			var batteryCount int64
+			if err := tx.Model(&InventoryItem{}).
+				Where("id = ? AND user_id = ? AND item_type = 'scanner_battery' AND deleted_at IS NULL",
+					*req.BatteryInstanceID, userID).
+				Count(&batteryCount).Error; err != nil {
+				return fmt.Errorf("failed to validate battery ownership: %w", err)
+			}
+			if batteryCount == 0 {
+				return fmt.Errorf("battery not found in your inventory")
+			}
+
+			// Check if battery is already in use
+			var batteryInUseCount int64
+			if err := tx.Model(&DeployedDevice{}).
+				Where("battery_inventory_id = ? AND is_active = TRUE", *req.BatteryInstanceID).
+				Count(&batteryInUseCount).Error; err != nil {
+				return fmt.Errorf("failed to check battery usage: %w", err)
+			}
+			if batteryInUseCount > 0 {
+				return fmt.Errorf("battery is currently in use in a deployed device")
+			}
+
+			// Check if battery is already being charged
+			var chargingCount int64
+			if err := tx.Model(&BatteryChargingSession{}).
+				Where("battery_instance_id = ? AND status = 'active'", *req.BatteryInstanceID).
+				Count(&chargingCount).Error; err != nil {
+				return fmt.Errorf("failed to check battery charging status: %w", err)
+			}
+			if chargingCount > 0 {
+				return fmt.Errorf("battery is already being charged")
+			}
+		}
 
 		// Create charging session
 		newSession := BatteryChargingSession{
@@ -612,8 +727,18 @@ func (s *Service) CompleteBatteryCharging(userID uuid.UUID, sessionID uuid.UUID)
 			return fmt.Errorf("charging is not yet complete")
 		}
 
-		// TODO: Update battery in inventory/device
-		// This would require integration with inventory/device systems
+		// Update battery in inventory if battery_instance_id is provided
+		if session.BatteryInstanceID != nil {
+			// Update battery charge to 100% in inventory
+			if err := tx.Exec(`
+				UPDATE gameplay.inventory_items 
+				SET properties = jsonb_set(COALESCE(properties,'{}'::jsonb), '{charge_pct}', '100'::jsonb, true),
+				    updated_at = NOW()
+				WHERE id = ? AND user_id = ?
+			`, *session.BatteryInstanceID, userID).Error; err != nil {
+				return fmt.Errorf("failed to update battery charge: %w", err)
+			}
+		}
 
 		// Update session
 		session.Status = "completed"
