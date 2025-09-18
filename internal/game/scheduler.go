@@ -107,6 +107,9 @@ func (s *Scheduler) run() {
 
 			// Run battery drain for deployed scanners
 			s.drainDeployedScannerBatteries()
+
+			// Update battery charging progress and complete finished sessions
+			s.updateBatteryChargingProgress()
 		}
 	}
 }
@@ -286,4 +289,72 @@ func (s *Scheduler) drainDeployedScannerBatteries() {
 	// Note: We don't actually delete destroyed scanners from the database
 	// They remain as historical records but are marked as inactive
 	// This allows for analytics and prevents data loss
+}
+
+// ✅ Update battery charging progress and complete finished sessions
+func (s *Scheduler) updateBatteryChargingProgress() {
+	log.Printf("🔋 Starting battery charging progress update...")
+
+	now := time.Now()
+
+	// Update progress for all active charging sessions
+	updateQuery := `
+		UPDATE laboratory.battery_charging_sessions 
+		SET progress = GREATEST(
+			LEAST(
+				(EXTRACT(EPOCH FROM ($1 - start_time)) / EXTRACT(EPOCH FROM (end_time - start_time))) * 100.0,
+				100.0
+			),
+			0.0
+		),
+		updated_at = $1
+		WHERE status = 'active' 
+		AND start_time <= $1 
+		AND end_time > $1
+	`
+
+	result := s.db.Exec(updateQuery, now)
+	if result.Error != nil {
+		log.Printf("❌ Error updating charging progress: %v", result.Error)
+		return
+	}
+
+	// Complete sessions that are finished
+	completeQuery := `
+		UPDATE laboratory.battery_charging_sessions 
+		SET status = 'completed',
+		    progress = 100.0,
+		    updated_at = $1
+		WHERE status = 'active' 
+		AND end_time <= $1
+	`
+
+	completeResult := s.db.Exec(completeQuery, now)
+	if completeResult.Error != nil {
+		log.Printf("❌ Error completing charging sessions: %v", completeResult.Error)
+		return
+	}
+
+	// Update battery charge to 100% for completed sessions
+	batteryUpdateQuery := `
+		UPDATE gameplay.inventory_items 
+		SET properties = jsonb_set(COALESCE(properties,'{}'::jsonb), '{charge_pct}', '100'::jsonb, true),
+		    updated_at = $1
+		WHERE id IN (
+			SELECT battery_instance_id 
+			FROM laboratory.battery_charging_sessions 
+			WHERE status = 'completed' 
+			AND battery_instance_id IS NOT NULL
+			AND updated_at >= $1 - INTERVAL '1 minute'
+		)
+	`
+
+	batteryResult := s.db.Exec(batteryUpdateQuery, now)
+	if batteryResult.Error != nil {
+		log.Printf("❌ Error updating battery charge: %v", batteryResult.Error)
+		return
+	}
+
+	log.Printf("✅ Battery charging progress update completed - Updated: %d, Completed: %d, Batteries charged: %d",
+		result.RowsAffected, completeResult.RowsAffected, batteryResult.RowsAffected)
 }
