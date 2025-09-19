@@ -502,10 +502,6 @@ func (h *Handler) PlaceLaboratory(c *gin.Context) {
 		return
 	}
 
-	// Debug: Log request body
-	body, _ := c.GetRawData()
-	fmt.Printf("🔍 PlaceLaboratory request body: %s\n", string(body))
-
 	// Parse request
 	var req PlaceLaboratoryRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
