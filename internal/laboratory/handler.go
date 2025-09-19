@@ -502,12 +502,19 @@ func (h *Handler) PlaceLaboratory(c *gin.Context) {
 		return
 	}
 
+	// Debug: Log request body
+	body, _ := c.GetRawData()
+	fmt.Printf("🔍 PlaceLaboratory request body: %s\n", string(body))
+
 	// Parse request
 	var req PlaceLaboratoryRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
+		fmt.Printf("❌ PlaceLaboratory validation error: %v\n", err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+
+	fmt.Printf("✅ PlaceLaboratory request: lat=%.6f, lng=%.6f\n", req.Latitude, req.Longitude)
 
 	// Place laboratory
 	result, err := h.service.PlaceLaboratory(userID, &req)
