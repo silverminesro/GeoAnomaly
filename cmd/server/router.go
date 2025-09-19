@@ -450,11 +450,11 @@ func setupRoutes(db *gorm.DB, redisClient *redis.Client, r2Client *media.R2Clien
 			laboratoryRoutes.POST("/upgrade", laboratoryHandler.UpgradeLaboratory)
 			laboratoryRoutes.POST("/battery/slots/purchase", laboratoryHandler.PurchaseExtraChargingSlot)
 
-			// Laboratory Placement & Map
-			laboratoryRoutes.POST("/place", laboratoryHandler.PlaceLaboratory)
-			laboratoryRoutes.POST("/relocate", laboratoryHandler.RequireLaboratoryPlaced(), laboratoryHandler.RelocateLaboratory)
-			laboratoryRoutes.GET("/relocate/cost", laboratoryHandler.RequireLaboratoryPlaced(), laboratoryHandler.GetRelocationCost)
-			laboratoryRoutes.GET("/nearby", laboratoryHandler.GetNearbyLaboratories)
+			// Laboratory Placement & Map - DISABLED
+			// laboratoryRoutes.POST("/place", laboratoryHandler.PlaceLaboratory)
+			// laboratoryRoutes.POST("/relocate", laboratoryHandler.RequireLaboratoryPlaced(), laboratoryHandler.RelocateLaboratory)
+			// laboratoryRoutes.GET("/relocate/cost", laboratoryHandler.RequireLaboratoryPlaced(), laboratoryHandler.GetRelocationCost)
+			// laboratoryRoutes.GET("/nearby", laboratoryHandler.GetNearbyLaboratories)
 
 			// Research System (Level 2+)
 			laboratoryRoutes.POST("/research/start", laboratoryHandler.RequireLaboratoryPlaced(), laboratoryHandler.RequireResearchUnlocked(), laboratoryHandler.StartResearch)
