@@ -135,9 +135,6 @@ func main() {
 
 	// Setup routes with security middleware and R2 client
 	router := setupRoutes(db, redisClient, r2Client)
-	
-	// Setup routes with security middleware and R2 client
-	router := setupRoutes(db, redisClient, r2Client)
 
 	// Get server configuration from .env
 	port := GetEnvVar("PORT", "8080")
@@ -457,4 +454,3 @@ func printServerInfo(host, port string) {
 	fmt.Printf("🛡️ Security: Try CONNECT attack to test blocking\n")
 	fmt.Println(separator + "\n")
 }
-
