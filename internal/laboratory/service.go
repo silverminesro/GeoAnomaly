@@ -920,10 +920,11 @@ func (s *Service) ClaimTaskReward(userID uuid.UUID, taskID uuid.UUID) error {
 }
 
 // =============================================
-// 6. LABORATORY PLACEMENT & MAP FUNCTIONS
+// 6. LABORATORY PLACEMENT & MAP FUNCTIONS - DISABLED
 // =============================================
 
-// PlaceLaboratory places laboratory on map at specified location
+// PlaceLaboratory places laboratory on map at specified location - DISABLED
+/*
 func (s *Service) PlaceLaboratory(userID uuid.UUID, req *PlaceLaboratoryRequest) (*PlaceLaboratoryResponse, error) {
 	var result *PlaceLaboratoryResponse
 
@@ -1004,8 +1005,10 @@ func (s *Service) PlaceLaboratory(userID uuid.UUID, req *PlaceLaboratoryRequest)
 
 	return result, nil
 }
+*/
 
-// RelocateLaboratory relocates laboratory to new location for essence cost
+// RelocateLaboratory relocates laboratory to new location for essence cost - DISABLED
+/*
 func (s *Service) RelocateLaboratory(userID uuid.UUID, req *RelocateLaboratoryRequest) (*RelocateLaboratoryResponse, error) {
 	var result *RelocateLaboratoryResponse
 
@@ -1098,7 +1101,8 @@ func (s *Service) RelocateLaboratory(userID uuid.UUID, req *RelocateLaboratoryRe
 	return result, nil
 }
 
-// GetNearbyLaboratories returns laboratories within specified radius
+// GetNearbyLaboratories returns laboratories within specified radius - DISABLED
+/*
 func (s *Service) GetNearbyLaboratories(userID uuid.UUID, req *GetNearbyLaboratoriesRequest) (*GetNearbyLaboratoriesResponse, error) {
 	// Default radius if not specified
 	radiusM := req.RadiusM
@@ -1108,7 +1112,7 @@ func (s *Service) GetNearbyLaboratories(userID uuid.UUID, req *GetNearbyLaborato
 
 	// Query nearby laboratories using PostGIS
 	query := `
-		SELECT 
+		SELECT
 			l.id,
 			l.user_id,
 			u.username,
@@ -1119,7 +1123,7 @@ func (s *Service) GetNearbyLaboratories(userID uuid.UUID, req *GetNearbyLaborato
 			l.placed_at
 		FROM laboratory.laboratories l
 		JOIN auth.users u ON l.user_id = u.id
-		WHERE l.is_placed = true 
+		WHERE l.is_placed = true
 		AND ST_DWithin(l.location, ST_SetSRID(ST_MakePoint(?, ?), 4326)::geography, ?)
 		ORDER BY distance_km ASC
 		LIMIT 50
@@ -1163,6 +1167,7 @@ func (s *Service) GetNearbyLaboratories(userID uuid.UUID, req *GetNearbyLaborato
 		Total:        len(laboratories),
 	}, nil
 }
+*/
 
 // getLaboratoryIcon returns appropriate icon for laboratory level and ownership
 func (s *Service) getLaboratoryIcon(level int, isOwn bool) string {
@@ -1191,8 +1196,9 @@ func (s *Service) getLaboratoryIcon(level int, isOwn bool) string {
 	}
 }
 
-// getRelocationCost calculates essence cost for laboratory relocation
+// getRelocationCost calculates essence cost for laboratory relocation - DISABLED
 // First placement is FREE, relocations cost: 500, 1000, 1500, 2000, 2500, 3000, 3500, 4000, 4500, 5000 (max)
+/*
 func (s *Service) getRelocationCost(relocationCount int) int {
 	// First placement is free (relocationCount = 0)
 	if relocationCount == 0 {
@@ -1210,6 +1216,7 @@ func (s *Service) getRelocationCost(relocationCount int) int {
 	// After 10 relocations, cost stays at 5000
 	return 5000
 }
+*/
 
 // =============================================
 // 7. HELPER FUNCTIONS
