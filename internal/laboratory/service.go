@@ -526,16 +526,16 @@ func (s *Service) GetAvailableBatteries(userID uuid.UUID) ([]AvailableBattery, e
 			-- Check if battery is currently in use
 			dd.id IS NOT NULL as is_in_use,
 			dd.name as device_name,
-			-- Get battery type from market items
-			mi.name as battery_name,
-			mi.properties->>'drain_rate_per_hour' as battery_type,
+			-- Get battery name from properties
+			ii.properties->>'display_name' as battery_name,
+			-- Get battery type from properties (level-based)
+			ii.properties->>'level' as battery_type,
 			-- Get current charge from properties
 			COALESCE(
 				CAST(ii.properties->>'charge_pct' AS INTEGER),
 				100
 			) as current_charge
 		FROM gameplay.inventory_items ii
-		JOIN market.market_items mi ON ii.item_id = mi.id
 		LEFT JOIN gameplay.deployed_devices dd ON dd.battery_inventory_id = ii.id AND dd.is_active = TRUE
 		WHERE ii.user_id = ? 
 			AND ii.item_type = 'scanner_battery' 
@@ -575,14 +575,14 @@ func (s *Service) GetAvailableBatteries(userID uuid.UUID) ([]AvailableBattery, e
 			battery.Properties = make(JSONB)
 		}
 
-		// Determine battery type from drain rate
+		// Determine battery type from level
 		switch batteryTypeStr {
-		case "4.17": // Basic (24h)
+		case "1": // Basic (Level 1)
 			battery.BatteryType = "basic"
-		case "2.08": // Advanced (48h)
+		case "3": // Enhanced (Level 3)
+			battery.BatteryType = "enhanced"
+		case "5": // Advanced (Level 5)
 			battery.BatteryType = "advanced"
-		case "0.83": // Military (120h)
-			battery.BatteryType = "military"
 		default:
 			battery.BatteryType = "unknown"
 		}

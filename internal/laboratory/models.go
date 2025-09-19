@@ -330,7 +330,7 @@ type StartChargingRequest struct {
 	BatteryType       string     `json:"battery_type" binding:"required"`
 	DeviceType        string     `json:"device_type" binding:"required,oneof=scanner drone"`
 	DeviceID          *uuid.UUID `json:"device_id,omitempty"`
-	BatteryInstanceID *uuid.UUID `json:"battery_instance_id,omitempty"`
+	BatteryInstanceID *uuid.UUID `json:"battery_instance_id,omitempty"` // Flutter posiela batteryInstanceId
 }
 
 // AvailableBattery represents a battery available for charging from user inventory
