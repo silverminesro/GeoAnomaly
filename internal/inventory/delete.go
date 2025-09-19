@@ -54,11 +54,21 @@ func (h *Handler) DeleteItem(c *gin.Context) {
 	if err := h.db.Where("id = ? AND user_id = ? AND deleted_at IS NULL", itemUUID, userUUID).First(&item).Error; err != nil {
 		fmt.Printf("❌ Failed to find item: %v\n", err)
 		if err == gorm.ErrRecordNotFound {
-			c.JSON(http.StatusNotFound, gin.H{"error": "Item not found"})
+			// Item not found or already deleted - return success (idempotent delete)
+			fmt.Printf("✅ Item not found or already deleted - returning success\n")
+			c.JSON(http.StatusOK, gin.H{
+				"success": true,
+				"message": "Item not found or already deleted",
+				"deleted_item": gin.H{
+					"id":   itemUUID,
+					"name": "Unknown Item",
+				},
+			})
+			return
 		} else {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to find item"})
+			return
 		}
-		return
 	}
 
 	// Soft delete
