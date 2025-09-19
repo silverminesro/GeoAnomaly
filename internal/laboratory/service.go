@@ -1,6 +1,7 @@
 package laboratory
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"time"
@@ -517,7 +518,7 @@ func (s *Service) CompleteCrafting(userID uuid.UUID, sessionID uuid.UUID) error 
 func (s *Service) GetAvailableBatteries(userID uuid.UUID) ([]AvailableBattery, error) {
 	var batteries []AvailableBattery
 
-	// Query to get all scanner batteries from user inventory
+	// Query to get all scanner batteries from user inventory (only 0% batérie)
 	query := `
 		SELECT 
 			ii.id AS inventory_id,
@@ -526,21 +527,30 @@ func (s *Service) GetAvailableBatteries(userID uuid.UUID) ([]AvailableBattery, e
 			-- Check if battery is currently in use
 			dd.id IS NOT NULL as is_in_use,
 			dd.name as device_name,
-			-- Get battery name from properties
-			ii.properties->>'display_name' as battery_name,
-			-- Get battery type from properties (level-based)
-			ii.properties->>'level' as battery_type,
-			-- Get current charge from properties
+			-- Battery label & type (safe defaults)
+			COALESCE(ii.properties->>'display_name','Battery') as battery_name,
+			COALESCE(ii.properties->>'level','1') as battery_type,
+			-- Current charge parsed leniently (non-numeric → 0)
 			COALESCE(
-				CAST(ii.properties->>'charge_pct' AS INTEGER),
-				100
+			  CASE 
+			    WHEN (ii.properties->>'charge_pct') ~ '^[0-9]+$' 
+			      THEN (ii.properties->>'charge_pct')::int
+			    ELSE 0
+			  END, 0
 			) as current_charge
 		FROM gameplay.inventory_items ii
-		LEFT JOIN gameplay.deployed_devices dd ON dd.battery_inventory_id = ii.id AND dd.is_active = TRUE
+		LEFT JOIN gameplay.deployed_devices dd 
+		  ON dd.battery_inventory_id = ii.id AND dd.is_active = TRUE
 		WHERE ii.user_id = ? 
 			AND ii.item_type = 'scanner_battery' 
 			AND ii.deleted_at IS NULL
-			AND COALESCE(CAST(ii.properties->>'charge_pct' AS INTEGER), 100) = 0
+			AND (
+			  CASE 
+			    WHEN (ii.properties->>'charge_pct') ~ '^[0-9]+$' 
+			      THEN (ii.properties->>'charge_pct')::int
+			    ELSE 0
+			  END
+			) = 0
 		ORDER BY ii.acquired_at DESC
 	`
 
@@ -554,7 +564,7 @@ func (s *Service) GetAvailableBatteries(userID uuid.UUID) ([]AvailableBattery, e
 		var battery AvailableBattery
 		var propertiesStr string
 		var batteryTypeStr string
-		var deviceName *string
+		var deviceName sql.NullString
 
 		if err := rows.Scan(
 			&battery.InventoryID,
@@ -575,7 +585,7 @@ func (s *Service) GetAvailableBatteries(userID uuid.UUID) ([]AvailableBattery, e
 			battery.Properties = make(JSONB)
 		}
 
-		// Determine battery type from level
+		// Determine battery type from level string
 		switch batteryTypeStr {
 		case "1": // Basic (Level 1)
 			battery.BatteryType = "basic"
@@ -587,7 +597,12 @@ func (s *Service) GetAvailableBatteries(userID uuid.UUID) ([]AvailableBattery, e
 			battery.BatteryType = "unknown"
 		}
 
-		battery.DeviceName = deviceName
+		if deviceName.Valid {
+			name := deviceName.String
+			battery.DeviceName = &name
+		} else {
+			battery.DeviceName = nil
+		}
 		batteries = append(batteries, battery)
 	}
 
