@@ -424,6 +424,7 @@ func setupRoutes(db *gorm.DB, redisClient *redis.Client, r2Client *media.R2Clien
 
 			// Battery management
 			deployableRoutes.POST("/:device_id/remove-battery", deployableHandler.RemoveBattery)
+			deployableRoutes.POST("/:device_id/attach-battery", deployableHandler.AttachBattery)
 
 			// Device hacking
 			deployableRoutes.POST("/:device_id/hack", deployableHandler.HackDevice)
