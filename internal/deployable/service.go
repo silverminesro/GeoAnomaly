@@ -59,14 +59,14 @@ func (s *Service) DeployDevice(userID uuid.UUID, req *DeployRequest) (*DeployRes
 		ID:                 uuid.New(),
 		OwnerID:            userID,
 		DeviceInventoryID:  req.DeviceInventoryID,
-		BatteryInventoryID: &req.BatteryInventoryID, // Konvertovať na pointer
-		BatteryStatus:      "installed",             // Nový stĺpec
+		BatteryInventoryID: &req.BatteryInventoryID,   // Konvertovať na pointer
+		BatteryStatus:      &[]string{"installed"}[0], // Nový stĺpec
 		Name:               req.Name,
 		Latitude:           req.Latitude,
 		Longitude:          req.Longitude,
 		DeployedAt:         time.Now().UTC(),
 		IsActive:           true,
-		BatteryLevel:       100,
+		BatteryLevel:       &[]int{100}[0],
 		Status:             DeviceStatusActive,
 		HackResistance:     1,        // Default hack resistance
 		ScanRadiusKm:       1.0,      // Default 1km scan radius
@@ -200,6 +200,22 @@ func (s *Service) ScanDeployableDevice(userID uuid.UUID, deviceID uuid.UUID, req
 		return nil, err
 	}
 
+	// 5b. Skontrolovať stav batérie
+	if device.BatteryInventoryID == nil || device.BatteryLevel == nil || *device.BatteryLevel <= 0 {
+		return &DeployableScanResponse{
+			Success: false,
+			Message: "Scanner nemá batériu alebo je vybitá - skenovanie nie je možné",
+		}, nil
+	}
+
+	// 5c. Skontrolovať battery_status (ak je definovaný)
+	if device.BatteryStatus != nil && (*device.BatteryStatus == "removed" || *device.BatteryStatus == "depleted") {
+		return &DeployableScanResponse{
+			Success: false,
+			Message: "Scanner má vybratú alebo vybitú batériu - skenovanie nie je možné",
+		}, nil
+	}
+
 	// 6. Nájsť najbližšie zóny v okolí zariadenia – použijeme skutočný dosah zariadenia
 	// Ensure default values for scan radius
 	scanRadiusKm := device.ScanRadiusKm
@@ -232,7 +248,7 @@ func (s *Service) ScanDeployableDevice(userID uuid.UUID, deviceID uuid.UUID, req
 	/*
 		// 8b. Znížiť battery level (5% za scan)
 		batteryConsumption := 5
-		newBatteryLevel := device.BatteryLevel - batteryConsumption
+		newBatteryLevel := *device.BatteryLevel - batteryConsumption
 		if newBatteryLevel < 0 {
 			newBatteryLevel = 0
 		}
@@ -242,7 +258,7 @@ func (s *Service) ScanDeployableDevice(userID uuid.UUID, deviceID uuid.UUID, req
 			log.Printf("⚠️ Failed to update battery level for device %s: %v", deviceID, err)
 		} else {
 			log.Printf("🔋 Battery consumed: device %s (%s) %d%% → %d%% (-%d%%)",
-				deviceID, device.Name, device.BatteryLevel, newBatteryLevel, batteryConsumption)
+				deviceID, device.Name, *device.BatteryLevel, newBatteryLevel, batteryConsumption)
 		}
 	*/
 
@@ -1156,7 +1172,11 @@ func (s *Service) createMarkerFromDevice(device DeployedDevice, visibilityType s
 
 	// Určiť interakcie
 	canHack := device.Status == DeviceStatusActive && device.IsActive
-	canScan := device.Status == DeviceStatusActive && device.IsActive
+	canScan := device.Status == DeviceStatusActive && device.IsActive &&
+		device.BatteryInventoryID != nil &&
+		device.BatteryLevel != nil &&
+		*device.BatteryLevel > 0 &&
+		(device.BatteryStatus == nil || (*device.BatteryStatus != "removed" && *device.BatteryStatus != "depleted"))
 	canClaim := device.Status == DeviceStatusAbandoned
 
 	// Ensure default values for scan radius
@@ -1172,7 +1192,12 @@ func (s *Service) createMarkerFromDevice(device DeployedDevice, visibilityType s
 		Latitude:       device.Latitude,
 		Longitude:      device.Longitude,
 		Icon:           icon,
-		BatteryLevel:   device.BatteryLevel,
+		BatteryLevel:   func() int {
+			if device.BatteryLevel != nil {
+				return *device.BatteryLevel
+			}
+			return 0
+		}(),
 		ScanRadiusKm:   scanRadiusKm,
 		CanHack:        canHack,
 		CanScan:        canScan,
@@ -1185,7 +1210,7 @@ func (s *Service) createMarkerFromDevice(device DeployedDevice, visibilityType s
 // determineDeviceStatusAndIcon - určí status a ikonu zariadenia
 func (s *Service) determineDeviceStatusAndIcon(device DeployedDevice) (status, icon string) {
 	// Červená - vybitá batéria (len majiteľ vidí)
-	if device.BatteryLevel <= 0 {
+	if device.BatteryLevel != nil && *device.BatteryLevel <= 0 {
 		return "battery_dead", "scanner_red"
 	}
 
@@ -1234,7 +1259,7 @@ func (s *Service) RemoveBattery(deviceID uuid.UUID, userID uuid.UUID) (*RemoveBa
 	}
 
 	// 2. Skontrolovať, či je batéria vybitá
-	if device.BatteryLevel > 0 {
+	if device.BatteryLevel != nil && *device.BatteryLevel > 0 {
 		return &RemoveBatteryResponse{
 			Success: false,
 			Message: "Batéria nie je vybitá, nemôže sa vybrať",

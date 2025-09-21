@@ -13,7 +13,7 @@ type DeployedDevice struct {
 	OwnerID            uuid.UUID         `json:"owner_id" db:"owner_id" gorm:"not null"`                       // FK na auth.users je v DB
 	DeviceInventoryID  uuid.UUID         `json:"device_inventory_id" db:"device_inventory_id" gorm:"not null"` // FK na gameplay.inventory_items je v DB
 	BatteryInventoryID *uuid.UUID        `json:"battery_inventory_id" db:"battery_inventory_id"`               // FK na gameplay.inventory_items je v DB (nullable pre vybraté batérie)
-	BatteryStatus      string            `json:"battery_status" db:"battery_status"`                           // installed, removed, depleted
+	BatteryStatus      *string           `json:"battery_status" db:"battery_status"`                           // installed, removed, depleted
 	Name               string            `json:"name" db:"name"`
 	Latitude           float64           `json:"latitude" db:"latitude"`
 	Longitude          float64           `json:"longitude" db:"longitude"`
@@ -21,7 +21,7 @@ type DeployedDevice struct {
 	LastScanAt         *time.Time        `json:"last_scan_at" db:"last_scan_at"`
 	LastAccessedAt     *time.Time        `json:"last_accessed_at" db:"last_accessed_at"`
 	IsActive           bool              `json:"is_active" db:"is_active"`
-	BatteryLevel       int               `json:"battery_level" db:"battery_level"` // 0-100%
+	BatteryLevel       *int              `json:"battery_level" db:"battery_level"` // 0-100%
 	BatteryDepletedAt  *time.Time        `json:"battery_depleted_at" db:"battery_depleted_at"`
 	AbandonedAt        *time.Time        `json:"abandoned_at" db:"abandoned_at"`
 	LastDisabledAt     *time.Time        `json:"last_disabled_at" db:"last_disabled_at"`
