@@ -557,3 +557,44 @@ func (h *Handler) RemoveBattery(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, response)
 	}
 }
+
+// AttachBattery - pripojí batériu k zariadeniu
+func (h *Handler) AttachBattery(c *gin.Context) {
+	userID, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+		return
+	}
+
+	userUUID, ok := userID.(uuid.UUID)
+	if !ok {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Invalid user ID format"})
+		return
+	}
+
+	deviceIDStr := c.Param("device_id")
+	deviceID, err := uuid.Parse(deviceIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid device ID format"})
+		return
+	}
+
+	var req AttachBatteryRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body: " + err.Error()})
+		return
+	}
+
+	response, err := h.service.AttachBattery(deviceID, userUUID, &req)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Vrátiť správny HTTP kód podľa úspechu
+	if response.Success {
+		c.JSON(http.StatusOK, response)
+	} else {
+		c.JSON(http.StatusBadRequest, response)
+	}
+}

@@ -1210,6 +1210,18 @@ type RemoveBatteryResponse struct {
 	Device  *DeployedDevice `json:"device,omitempty"`
 }
 
+// AttachBatteryRequest - request na pripojenie batérie
+type AttachBatteryRequest struct {
+	BatteryInventoryID uuid.UUID `json:"battery_inventory_id" binding:"required"`
+}
+
+// AttachBatteryResponse - odpoveď pre pripojenie batérie
+type AttachBatteryResponse struct {
+	Success bool            `json:"success"`
+	Message string          `json:"message"`
+	Device  *DeployedDevice `json:"device,omitempty"`
+}
+
 // RemoveBattery - vyberie vybitú batériu z zariadenia
 func (s *Service) RemoveBattery(deviceID uuid.UUID, userID uuid.UUID) (*RemoveBatteryResponse, error) {
 	// 1. Načítať zariadenie
@@ -1285,6 +1297,90 @@ func (s *Service) RemoveBattery(deviceID uuid.UUID, userID uuid.UUID) (*RemoveBa
 	return &RemoveBatteryResponse{
 		Success: true,
 		Message: "Batéria bola úspešne vybratá a vrátená do inventára s 0% batériou",
+		Device:  &updatedDevice,
+	}, nil
+}
+
+// AttachBattery - pripojí batériu k zariadeniu
+func (s *Service) AttachBattery(deviceID uuid.UUID, userID uuid.UUID, req *AttachBatteryRequest) (*AttachBatteryResponse, error) {
+	// 1. Načítať zariadenie
+	var device DeployedDevice
+	if err := s.db.Where("id = ? AND owner_id = ? AND is_active = true", deviceID, userID).First(&device).Error; err != nil {
+		return &AttachBatteryResponse{
+			Success: false,
+			Message: "Zariadenie nebolo nájdené alebo nepatrí vám",
+		}, nil
+	}
+
+	// 2. Skontrolovať, či zariadenie nemá už batériu
+	if device.BatteryInventoryID != nil {
+		return &AttachBatteryResponse{
+			Success: false,
+			Message: "Zariadenie už má inštalovanú batériu",
+		}, nil
+	}
+
+	// 3. Skontrolovať, či batéria existuje v inventári hráča a má 100% nabitie
+	var batteryItem gameplay.InventoryItem
+	if err := s.db.Where("id = ? AND user_id = ? AND item_type = 'scanner_battery' AND deleted_at IS NULL", req.BatteryInventoryID, userID).First(&batteryItem).Error; err != nil {
+		return &AttachBatteryResponse{
+			Success: false,
+			Message: "Batéria nebola nájdená v inventári",
+		}, nil
+	}
+
+	// 4. Skontrolovať nabitie batérie
+	chargePct, ok := batteryItem.Properties["charge_pct"].(float64)
+	if !ok {
+		chargePct = 100.0 // Default ak nie je v properties
+	}
+	if chargePct < 100 {
+		return &AttachBatteryResponse{
+			Success: false,
+			Message: "Batéria musí byť plne nabitá (100%)",
+		}, nil
+	}
+
+	// 5. Pripojiť batériu v transakcii
+	var updatedDevice DeployedDevice
+	err := s.db.Transaction(func(tx *gorm.DB) error {
+		// Pripojiť batériu k zariadeniu
+		if err := tx.Model(&device).Updates(map[string]interface{}{
+			"battery_inventory_id": req.BatteryInventoryID,
+			"battery_status":       "installed",
+			"battery_level":        100,
+			"status":               "active",
+			"updated_at":           time.Now(),
+		}).Error; err != nil {
+			return fmt.Errorf("failed to attach battery to device: %w", err)
+		}
+
+		// Odstrániť batériu z inventára (soft delete)
+		if err := tx.Model(&batteryItem).Update("deleted_at", time.Now()).Error; err != nil {
+			return fmt.Errorf("failed to remove battery from inventory: %w", err)
+		}
+
+		// Načítať aktualizované zariadenie
+		if err := tx.Where("id = ?", deviceID).First(&updatedDevice).Error; err != nil {
+			return fmt.Errorf("failed to load updated device: %w", err)
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		log.Printf("⚠️ Failed to attach battery: %v", err)
+		return &AttachBatteryResponse{
+			Success: false,
+			Message: "Chyba pri pripojení batérie: " + err.Error(),
+		}, nil
+	}
+
+	log.Printf("🔋 Battery attached to device %s (%s) by user %s", deviceID, device.Name, userID)
+
+	return &AttachBatteryResponse{
+		Success: true,
+		Message: "Batéria bola úspešne pripojená k zariadeniu",
 		Device:  &updatedDevice,
 	}, nil
 }
