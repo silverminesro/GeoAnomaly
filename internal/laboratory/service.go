@@ -620,10 +620,11 @@ func (s *Service) GetChargingSlots(userID uuid.UUID) ([]ChargingSlot, error) {
 	totalSlots := lab.BaseChargingSlots + lab.ExtraChargingSlots
 	slots := make([]ChargingSlot, totalSlots)
 
-	// Get active charging sessions
+	// Get active charging sessions + recently completed (last 5 minutes)
 	var activeSessions []BatteryChargingSession
-	if err := s.db.Where("user_id = ? AND status = 'active'", userID).Find(&activeSessions).Error; err != nil {
-		return nil, fmt.Errorf("failed to get active charging sessions: %w", err)
+	fiveMinutesAgo := time.Now().Add(-5 * time.Minute)
+	if err := s.db.Where("user_id = ? AND (status = 'active' OR (status = 'completed' AND updated_at > ?))", userID, fiveMinutesAgo).Find(&activeSessions).Error; err != nil {
+		return nil, fmt.Errorf("failed to get charging sessions: %w", err)
 	}
 
 	// Create a map of slot numbers to active sessions
@@ -644,7 +645,7 @@ func (s *Service) GetChargingSlots(userID uuid.UUID) ([]ChargingSlot, error) {
 
 		slots[i] = ChargingSlot{
 			SlotNumber:        slotNumber,
-			IsAvailable:       activeSession == nil,
+			IsAvailable:       activeSession == nil || activeSession.Status == "completed",
 			ActiveSession:     activeSession,
 			BatteryInstanceID: batteryInstanceID,
 		}
