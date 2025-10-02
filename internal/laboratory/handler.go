@@ -493,8 +493,7 @@ func (h *Handler) GetCraftingRecipes(c *gin.Context) {
 // 8. LABORATORY PLACEMENT & MAP HANDLERS - DISABLED
 // =============================================
 
-// PlaceLaboratory places laboratory on map - DISABLED
-/*
+// PlaceLaboratory places laboratory on map
 func (h *Handler) PlaceLaboratory(c *gin.Context) {
 	// Get user ID from context
 	userID, err := h.getUserIDFromContext(c)
@@ -522,10 +521,8 @@ func (h *Handler) PlaceLaboratory(c *gin.Context) {
 
 	c.JSON(http.StatusOK, result)
 }
-*/
 
-// GetNearbyLaboratories returns laboratories within specified radius - DISABLED
-/*
+// GetNearbyLaboratories returns laboratories within specified radius
 func (h *Handler) GetNearbyLaboratories(c *gin.Context) {
 	// Get user ID from context
 	userID, err := h.getUserIDFromContext(c)
@@ -550,10 +547,8 @@ func (h *Handler) GetNearbyLaboratories(c *gin.Context) {
 
 	c.JSON(http.StatusOK, result)
 }
-*/
 
-// RelocateLaboratory relocates laboratory to new location - DISABLED
-/*
+// RelocateLaboratory relocates laboratory to new location
 func (h *Handler) RelocateLaboratory(c *gin.Context) {
 	// Get user ID from context
 	userID, err := h.getUserIDFromContext(c)
@@ -578,10 +573,8 @@ func (h *Handler) RelocateLaboratory(c *gin.Context) {
 
 	c.JSON(http.StatusOK, result)
 }
-*/
 
-// GetRelocationCost returns essence cost for laboratory relocation - DISABLED
-/*
+// GetRelocationCost returns essence cost for laboratory relocation
 func (h *Handler) GetRelocationCost(c *gin.Context) {
 	// Get user ID from context
 	userID, err := h.getUserIDFromContext(c)
@@ -616,7 +609,6 @@ func (h *Handler) GetRelocationCost(c *gin.Context) {
 		"cost_progression":   []int{0, 500, 1000, 1500, 2000, 2500, 3000, 3500, 4000, 4500, 5000},
 	})
 }
-*/
 
 // =============================================
 // 9. MIDDLEWARE FUNCTIONS

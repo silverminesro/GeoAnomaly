@@ -924,8 +924,7 @@ func (s *Service) ClaimTaskReward(userID uuid.UUID, taskID uuid.UUID) error {
 // 6. LABORATORY PLACEMENT & MAP FUNCTIONS - DISABLED
 // =============================================
 
-// PlaceLaboratory places laboratory on map at specified location - DISABLED
-/*
+// PlaceLaboratory places laboratory on map at specified location
 func (s *Service) PlaceLaboratory(userID uuid.UUID, req *PlaceLaboratoryRequest) (*PlaceLaboratoryResponse, error) {
 	var result *PlaceLaboratoryResponse
 
@@ -952,9 +951,24 @@ func (s *Service) PlaceLaboratory(userID uuid.UUID, req *PlaceLaboratoryRequest)
 			}
 		}
 
-		// Check if already placed
+		// Check if already placed - if yes, redirect to relocate logic
 		if lab.IsPlaced {
-			return fmt.Errorf("laboratory is already placed on map")
+			// Laboratory is already placed, use relocate logic instead
+			relocateReq := &RelocateLaboratoryRequest{
+				Latitude:  req.Latitude,
+				Longitude: req.Longitude,
+			}
+			relocateResp, err := s.RelocateLaboratory(userID, relocateReq)
+			if err != nil {
+				return err
+			}
+			// Convert RelocateLaboratoryResponse to PlaceLaboratoryResponse
+			result = &PlaceLaboratoryResponse{
+				Success:    relocateResp.Success,
+				Laboratory: relocateResp.Laboratory,
+				Message:    relocateResp.Message,
+			}
+			return nil // Return early to skip placement logic
 		}
 
 		// Check for nearby laboratories (minimum 50m distance)
@@ -1006,10 +1020,8 @@ func (s *Service) PlaceLaboratory(userID uuid.UUID, req *PlaceLaboratoryRequest)
 
 	return result, nil
 }
-*/
 
-// RelocateLaboratory relocates laboratory to new location for essence cost - DISABLED
-/*
+// RelocateLaboratory relocates laboratory to new location for essence cost
 func (s *Service) RelocateLaboratory(userID uuid.UUID, req *RelocateLaboratoryRequest) (*RelocateLaboratoryResponse, error) {
 	var result *RelocateLaboratoryResponse
 
@@ -1102,8 +1114,7 @@ func (s *Service) RelocateLaboratory(userID uuid.UUID, req *RelocateLaboratoryRe
 	return result, nil
 }
 
-// GetNearbyLaboratories returns laboratories within specified radius - DISABLED
-/*
+// GetNearbyLaboratories returns laboratories within specified radius
 func (s *Service) GetNearbyLaboratories(userID uuid.UUID, req *GetNearbyLaboratoriesRequest) (*GetNearbyLaboratoriesResponse, error) {
 	// Default radius if not specified
 	radiusM := req.RadiusM
@@ -1168,7 +1179,6 @@ func (s *Service) GetNearbyLaboratories(userID uuid.UUID, req *GetNearbyLaborato
 		Total:        len(laboratories),
 	}, nil
 }
-*/
 
 // getLaboratoryIcon returns appropriate icon for laboratory level and ownership
 func (s *Service) getLaboratoryIcon(level int, isOwn bool) string {
@@ -1197,9 +1207,8 @@ func (s *Service) getLaboratoryIcon(level int, isOwn bool) string {
 	}
 }
 
-// getRelocationCost calculates essence cost for laboratory relocation - DISABLED
+// getRelocationCost calculates essence cost for laboratory relocation
 // First placement is FREE, relocations cost: 500, 1000, 1500, 2000, 2500, 3000, 3500, 4000, 4500, 5000 (max)
-/*
 func (s *Service) getRelocationCost(relocationCount int) int {
 	// First placement is free (relocationCount = 0)
 	if relocationCount == 0 {
@@ -1217,7 +1226,6 @@ func (s *Service) getRelocationCost(relocationCount int) int {
 	// After 10 relocations, cost stays at 5000
 	return 5000
 }
-*/
 
 // =============================================
 // 7. HELPER FUNCTIONS
