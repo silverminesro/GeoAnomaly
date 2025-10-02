@@ -1335,7 +1335,7 @@ func (s *Service) validateUpgradeRequirements(userID uuid.UUID, requirements *La
 		var credits int
 		if err := s.db.Raw(`
 			SELECT COALESCE(amount, 0) 
-			FROM menu.currencies 
+			FROM market.currencies 
 			WHERE user_id = ? AND type = 'credits'
 		`, userID).Scan(&credits).Error; err != nil {
 			return fmt.Errorf("failed to check user credits: %w", err)
@@ -1382,7 +1382,7 @@ func (s *Service) processUpgradePayment(tx *gorm.DB, userID uuid.UUID, requireme
 	// Deduct credits
 	if requirements.CreditsRequired > 0 {
 		if err := tx.Exec(`
-			UPDATE menu.currencies 
+			UPDATE market.currencies 
 			SET amount = amount - ?, last_updated = NOW()
 			WHERE user_id = ? AND type = 'credits'
 		`, requirements.CreditsRequired, userID).Error; err != nil {
