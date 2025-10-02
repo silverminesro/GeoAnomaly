@@ -1431,7 +1431,7 @@ func (s *Service) processUpgradePayment(tx *gorm.DB, userID uuid.UUID, requireme
 // recordUpgradeHistory creates audit trail for upgrade
 func (s *Service) recordUpgradeHistory(tx *gorm.DB, lab *Laboratory, requirements *LaboratoryUpgradeRequirement, targetLevel int) error {
 	// Get consumed artifacts for history
-	var artifactsUsed []ArtifactUsed
+	var artifactsUsed ArtifactsUsed
 	if requirements.ArtifactRequired != nil && requirements.ArtifactQuantity > 0 {
 		// Query consumed artifacts (they should still be in DB with deleted_at set)
 		var artifacts []gameplay.InventoryItem

@@ -58,14 +58,14 @@ type LaboratoryUpgradeRequirement struct {
 
 // LaboratoryUpgradeHistory tracks laboratory upgrades for audit trail
 type LaboratoryUpgradeHistory struct {
-	ID            uuid.UUID      `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
-	LaboratoryID  uuid.UUID      `json:"laboratory_id" gorm:"not null;index"`
-	UserID        uuid.UUID      `json:"user_id" gorm:"not null;index"`
-	FromLevel     int            `json:"from_level" gorm:"not null"`
-	ToLevel       int            `json:"to_level" gorm:"not null"`
-	CreditsSpent  int            `json:"credits_spent" gorm:"default:0"`
-	ArtifactsUsed []ArtifactUsed `json:"artifacts_used" gorm:"type:jsonb;default:'[]'::jsonb"`
-	UpgradedAt    time.Time      `json:"upgraded_at" gorm:"autoCreateTime"`
+	ID            uuid.UUID     `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	LaboratoryID  uuid.UUID     `json:"laboratory_id" gorm:"not null;index"`
+	UserID        uuid.UUID     `json:"user_id" gorm:"not null;index"`
+	FromLevel     int           `json:"from_level" gorm:"not null"`
+	ToLevel       int           `json:"to_level" gorm:"not null"`
+	CreditsSpent  int           `json:"credits_spent" gorm:"default:0"`
+	ArtifactsUsed ArtifactsUsed `json:"artifacts_used" gorm:"type:jsonb;default:'[]'::jsonb"`
+	UpgradedAt    time.Time     `json:"upgraded_at" gorm:"autoCreateTime"`
 
 	// Relationships
 	Laboratory *Laboratory `json:"laboratory,omitempty" gorm:"foreignKey:LaboratoryID"`
@@ -85,23 +85,26 @@ type ArtifactUsed struct {
 	Quantity     int       `json:"quantity"`
 }
 
-// Scan implements the sql.Scanner interface for ArtifactUsed slice
-func (a *[]ArtifactUsed) Scan(value interface{}) error {
+// ArtifactsUsed is a custom type for JSONB handling
+type ArtifactsUsed []ArtifactUsed
+
+// Scan implements the sql.Scanner interface for ArtifactsUsed
+func (a *ArtifactsUsed) Scan(value interface{}) error {
 	if value == nil {
-		*a = []ArtifactUsed{}
+		*a = ArtifactsUsed{}
 		return nil
 	}
 
 	bytes, ok := value.([]byte)
 	if !ok {
-		return fmt.Errorf("cannot scan %T into []ArtifactUsed", value)
+		return fmt.Errorf("cannot scan %T into ArtifactsUsed", value)
 	}
 
 	return json.Unmarshal(bytes, a)
 }
 
-// Value implements the driver.Valuer interface for ArtifactUsed slice
-func (a []ArtifactUsed) Value() (driver.Value, error) {
+// Value implements the driver.Valuer interface for ArtifactsUsed
+func (a ArtifactsUsed) Value() (driver.Value, error) {
 	if len(a) == 0 {
 		return "[]", nil
 	}
