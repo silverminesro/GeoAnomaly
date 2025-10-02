@@ -57,18 +57,23 @@ type LaboratoryUpgradeRequirement struct {
 
 // LaboratoryUpgradeHistory tracks laboratory upgrades for audit trail
 type LaboratoryUpgradeHistory struct {
-	ID           uuid.UUID `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
-	LaboratoryID uuid.UUID `json:"laboratory_id" gorm:"not null;index"`
-	UserID       uuid.UUID `json:"user_id" gorm:"not null;index"`
-	FromLevel    int       `json:"from_level" gorm:"not null"`
-	ToLevel      int       `json:"to_level" gorm:"not null"`
-	CreditsSpent int       `json:"credits_spent" gorm:"default:0"`
+	ID            uuid.UUID      `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	LaboratoryID  uuid.UUID      `json:"laboratory_id" gorm:"not null;index"`
+	UserID        uuid.UUID      `json:"user_id" gorm:"not null;index"`
+	FromLevel     int            `json:"from_level" gorm:"not null"`
+	ToLevel       int            `json:"to_level" gorm:"not null"`
+	CreditsSpent  int            `json:"credits_spent" gorm:"default:0"`
 	ArtifactsUsed []ArtifactUsed `json:"artifacts_used" gorm:"type:jsonb;default:'[]'::jsonb"`
-	UpgradedAt   time.Time `json:"upgraded_at" gorm:"autoCreateTime"`
-	
+	UpgradedAt    time.Time      `json:"upgraded_at" gorm:"autoCreateTime"`
+
 	// Relationships
 	Laboratory *Laboratory `json:"laboratory,omitempty" gorm:"foreignKey:LaboratoryID"`
 	User       *User       `json:"user,omitempty" gorm:"foreignKey:UserID"`
+}
+
+// TableName specifies the table name for LaboratoryUpgradeHistory
+func (LaboratoryUpgradeHistory) TableName() string {
+	return "laboratory.laboratory_upgrade_history"
 }
 
 // ArtifactUsed represents an artifact consumed during upgrade
