@@ -84,10 +84,11 @@ func (s *Service) GetLaboratoryStatus(userID uuid.UUID) (*LaboratoryStatusRespon
 		}
 	}
 
-	// Update laboratory features based on player level
-	if err := s.updateLaboratoryFeaturesFromPlayerLevel(&lab, user.Level); err != nil {
-		return nil, fmt.Errorf("failed to update laboratory features: %w", err)
-	}
+	// Update laboratory features based on player level - DISABLED
+	// Laboratory level is now independent of player level
+	// if err := s.updateLaboratoryFeaturesFromPlayerLevel(&lab, user.Level); err != nil {
+	//	return nil, fmt.Errorf("failed to update laboratory features: %w", err)
+	// }
 
 	// Get user XP info (now using player XP system)
 	userXP := &LaboratoryXP{
@@ -196,18 +197,11 @@ func (s *Service) GetLaboratoryStatus(userID uuid.UUID) (*LaboratoryStatusRespon
 	}, nil
 }
 
-// UpgradeLaboratory upgrades laboratory to next level (now automatic based on player level)
+// UpgradeLaboratory upgrades laboratory to next level (independent of player level)
 func (s *Service) UpgradeLaboratory(userID uuid.UUID, targetLevel int) error {
-	// Get current user
-	var user User
-	if err := s.db.Where("id = ?", userID).First(&user).Error; err != nil {
-		return fmt.Errorf("failed to get user: %w", err)
-	}
-
-	// Check if player level is sufficient
-	if user.Level < targetLevel {
-		return fmt.Errorf("player level %d is insufficient for laboratory level %d (requires player level %d)",
-			user.Level, targetLevel, targetLevel)
+	// Validate target level
+	if targetLevel < 1 || targetLevel > 3 {
+		return fmt.Errorf("invalid target level %d (must be 1-3)", targetLevel)
 	}
 
 	// Get current laboratory
@@ -216,9 +210,39 @@ func (s *Service) UpgradeLaboratory(userID uuid.UUID, targetLevel int) error {
 		return fmt.Errorf("failed to get laboratory: %w", err)
 	}
 
-	// Update laboratory features based on player level
-	if err := s.updateLaboratoryFeaturesFromPlayerLevel(&lab, user.Level); err != nil {
-		return fmt.Errorf("failed to update laboratory features: %w", err)
+	// Check if already at target level or higher
+	if lab.Level >= targetLevel {
+		return fmt.Errorf("laboratory is already at level %d or higher", lab.Level)
+	}
+
+	// Get upgrade requirements for target level
+	var requirements LaboratoryUpgradeRequirement
+	if err := s.db.Where("level = ?", targetLevel).First(&requirements).Error; err != nil {
+		return fmt.Errorf("failed to get upgrade requirements for level %d: %w", targetLevel, err)
+	}
+
+	// TODO: Check if user has enough credits and required artifacts
+	// This would require integration with user/inventory systems
+	// For now, we'll just upgrade without checking requirements
+
+	// Update laboratory level and features
+	updates := map[string]interface{}{
+		"level": targetLevel,
+	}
+
+	// Update features based on target level
+	switch targetLevel {
+	case 2:
+		updates["research_unlocked"] = true
+		updates["base_charging_slots"] = 2
+	case 3:
+		updates["research_unlocked"] = true
+		updates["crafting_unlocked"] = true
+		updates["base_charging_slots"] = 3
+	}
+
+	if err := s.db.Model(&lab).Updates(updates).Error; err != nil {
+		return fmt.Errorf("failed to upgrade laboratory: %w", err)
 	}
 
 	return nil
@@ -1308,9 +1332,10 @@ func (s *Service) updateLaboratoryXP(tx *gorm.DB, userID uuid.UUID, xpType strin
 			return fmt.Errorf("failed to get laboratory for level up: %w", err)
 		}
 
-		if err := s.updateLaboratoryFeaturesFromPlayerLevel(&lab, xpResult.CurrentLevel); err != nil {
-			return fmt.Errorf("failed to update laboratory features after level up: %w", err)
-		}
+		// Laboratory level is now independent of player level - DISABLED
+		// if err := s.updateLaboratoryFeaturesFromPlayerLevel(&lab, xpResult.CurrentLevel); err != nil {
+		//	return fmt.Errorf("failed to update laboratory features after level up: %w", err)
+		// }
 	}
 
 	return nil
