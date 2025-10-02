@@ -451,34 +451,34 @@ func setupRoutes(db *gorm.DB, redisClient *redis.Client, r2Client *media.R2Clien
 			laboratoryRoutes.POST("/upgrade", laboratoryHandler.UpgradeLaboratory)
 			laboratoryRoutes.POST("/battery/slots/purchase", laboratoryHandler.PurchaseExtraChargingSlot)
 
-			// Laboratory Placement & Map - DISABLED
-			// laboratoryRoutes.POST("/place", laboratoryHandler.PlaceLaboratory)
-			// laboratoryRoutes.POST("/relocate", laboratoryHandler.RequireLaboratoryPlaced(), laboratoryHandler.RelocateLaboratory)
-			// laboratoryRoutes.GET("/relocate/cost", laboratoryHandler.RequireLaboratoryPlaced(), laboratoryHandler.GetRelocationCost)
-			// laboratoryRoutes.GET("/nearby", laboratoryHandler.GetNearbyLaboratories)
+			// Laboratory Placement & Map
+			laboratoryRoutes.POST("/place", laboratoryHandler.PlaceLaboratory)
+			laboratoryRoutes.POST("/relocate", laboratoryHandler.RequireLaboratoryPlaced(), laboratoryHandler.RelocateLaboratory)
+			laboratoryRoutes.GET("/relocate/cost", laboratoryHandler.RequireLaboratoryPlaced(), laboratoryHandler.GetRelocationCost)
+			laboratoryRoutes.GET("/nearby", laboratoryHandler.GetNearbyLaboratories)
 
 			// Research System (Level 2+)
-			laboratoryRoutes.POST("/research/start", laboratoryHandler.RequireLaboratoryPlaced(), laboratoryHandler.RequireResearchUnlocked(), laboratoryHandler.StartResearch)
-			laboratoryRoutes.GET("/research/status", laboratoryHandler.RequireLaboratoryPlaced(), laboratoryHandler.RequireResearchUnlocked(), laboratoryHandler.GetResearchStatus)
-			laboratoryRoutes.POST("/research/complete/:id", laboratoryHandler.RequireLaboratoryPlaced(), laboratoryHandler.RequireResearchUnlocked(), laboratoryHandler.CompleteResearch)
+			laboratoryRoutes.POST("/research/start", laboratoryHandler.RequireResearchUnlocked(), laboratoryHandler.StartResearch)
+			laboratoryRoutes.GET("/research/status", laboratoryHandler.RequireResearchUnlocked(), laboratoryHandler.GetResearchStatus)
+			laboratoryRoutes.POST("/research/complete/:id", laboratoryHandler.RequireResearchUnlocked(), laboratoryHandler.CompleteResearch)
 
 			// Crafting System (Level 3+)
-			laboratoryRoutes.POST("/craft/start", laboratoryHandler.RequireLaboratoryPlaced(), laboratoryHandler.RequireCraftingUnlocked(), laboratoryHandler.StartCrafting)
-			laboratoryRoutes.GET("/craft/status", laboratoryHandler.RequireLaboratoryPlaced(), laboratoryHandler.RequireCraftingUnlocked(), laboratoryHandler.GetCraftingStatus)
-			laboratoryRoutes.POST("/craft/complete/:id", laboratoryHandler.RequireLaboratoryPlaced(), laboratoryHandler.RequireCraftingUnlocked(), laboratoryHandler.CompleteCrafting)
-			laboratoryRoutes.GET("/recipes", laboratoryHandler.RequireLaboratoryPlaced(), laboratoryHandler.RequireCraftingUnlocked(), laboratoryHandler.GetCraftingRecipes)
+			laboratoryRoutes.POST("/craft/start", laboratoryHandler.RequireCraftingUnlocked(), laboratoryHandler.StartCrafting)
+			laboratoryRoutes.GET("/craft/status", laboratoryHandler.RequireCraftingUnlocked(), laboratoryHandler.GetCraftingStatus)
+			laboratoryRoutes.POST("/craft/complete/:id", laboratoryHandler.RequireCraftingUnlocked(), laboratoryHandler.CompleteCrafting)
+			laboratoryRoutes.GET("/recipes", laboratoryHandler.RequireCraftingUnlocked(), laboratoryHandler.GetCraftingRecipes)
 
 			// Battery Charging (Level 1+)
-			laboratoryRoutes.GET("/battery/available", laboratoryHandler.RequireLaboratoryPlaced(), laboratoryHandler.GetAvailableBatteries)
-			laboratoryRoutes.GET("/battery/slots", laboratoryHandler.RequireLaboratoryPlaced(), laboratoryHandler.GetChargingSlots)
-			laboratoryRoutes.POST("/battery/charge", laboratoryHandler.RequireLaboratoryPlaced(), laboratoryHandler.StartBatteryCharging)
-			laboratoryRoutes.GET("/battery/charging-status", laboratoryHandler.RequireLaboratoryPlaced(), laboratoryHandler.GetBatteryChargingStatus)
-			laboratoryRoutes.POST("/battery/complete/:id", laboratoryHandler.RequireLaboratoryPlaced(), laboratoryHandler.CompleteBatteryCharging)
+			laboratoryRoutes.GET("/battery/available", laboratoryHandler.GetAvailableBatteries)
+			laboratoryRoutes.GET("/battery/slots", laboratoryHandler.GetChargingSlots)
+			laboratoryRoutes.POST("/battery/charge", laboratoryHandler.StartBatteryCharging)
+			laboratoryRoutes.GET("/battery/charging-status", laboratoryHandler.GetBatteryChargingStatus)
+			laboratoryRoutes.POST("/battery/complete/:id", laboratoryHandler.CompleteBatteryCharging)
 
 			// Task System (Level 1+)
-			laboratoryRoutes.GET("/tasks", laboratoryHandler.RequireLaboratoryPlaced(), laboratoryHandler.GetAvailableTasks)
-			laboratoryRoutes.POST("/tasks/:id/progress", laboratoryHandler.RequireLaboratoryPlaced(), laboratoryHandler.UpdateTaskProgress)
-			laboratoryRoutes.POST("/tasks/:id/claim", laboratoryHandler.RequireLaboratoryPlaced(), laboratoryHandler.ClaimTaskReward)
+			laboratoryRoutes.GET("/tasks", laboratoryHandler.GetAvailableTasks)
+			laboratoryRoutes.POST("/tasks/:id/progress", laboratoryHandler.UpdateTaskProgress)
+			laboratoryRoutes.POST("/tasks/:id/claim", laboratoryHandler.ClaimTaskReward)
 		}
 	}
 
