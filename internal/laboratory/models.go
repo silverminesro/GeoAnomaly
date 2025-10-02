@@ -55,6 +55,30 @@ type LaboratoryUpgradeRequirement struct {
 	CreatedAt           time.Time `json:"created_at" gorm:"autoCreateTime"`
 }
 
+// LaboratoryUpgradeHistory tracks laboratory upgrades for audit trail
+type LaboratoryUpgradeHistory struct {
+	ID           uuid.UUID `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	LaboratoryID uuid.UUID `json:"laboratory_id" gorm:"not null;index"`
+	UserID       uuid.UUID `json:"user_id" gorm:"not null;index"`
+	FromLevel    int       `json:"from_level" gorm:"not null"`
+	ToLevel      int       `json:"to_level" gorm:"not null"`
+	CreditsSpent int       `json:"credits_spent" gorm:"default:0"`
+	ArtifactsUsed []ArtifactUsed `json:"artifacts_used" gorm:"type:jsonb;default:'[]'::jsonb"`
+	UpgradedAt   time.Time `json:"upgraded_at" gorm:"autoCreateTime"`
+	
+	// Relationships
+	Laboratory *Laboratory `json:"laboratory,omitempty" gorm:"foreignKey:LaboratoryID"`
+	User       *User       `json:"user,omitempty" gorm:"foreignKey:UserID"`
+}
+
+// ArtifactUsed represents an artifact consumed during upgrade
+type ArtifactUsed struct {
+	ArtifactID   uuid.UUID `json:"artifact_id"`
+	ArtifactName string    `json:"artifact_name"`
+	Rarity       string    `json:"rarity"`
+	Quantity     int       `json:"quantity"`
+}
+
 // ChargingSlotPurchase represents purchase of extra charging slot
 type ChargingSlotPurchase struct {
 	ID           uuid.UUID `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
