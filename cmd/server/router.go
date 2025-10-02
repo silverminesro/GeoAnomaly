@@ -447,9 +447,10 @@ func setupRoutes(db *gorm.DB, redisClient *redis.Client, r2Client *media.R2Clien
 		laboratoryRoutes.Use(middleware.JWTAuth())
 		{
 			// Laboratory Management
-			laboratoryRoutes.GET("/status", laboratoryHandler.GetLaboratoryStatus)
-			laboratoryRoutes.POST("/upgrade", laboratoryHandler.UpgradeLaboratory)
-			laboratoryRoutes.POST("/battery/slots/purchase", laboratoryHandler.PurchaseExtraChargingSlot)
+		laboratoryRoutes.GET("/status", laboratoryHandler.GetLaboratoryStatus)
+		laboratoryRoutes.POST("/upgrade", laboratoryHandler.UpgradeLaboratory)
+		laboratoryRoutes.GET("/upgrade/requirements/:level", laboratoryHandler.GetUpgradeRequirements)
+		laboratoryRoutes.POST("/battery/slots/purchase", laboratoryHandler.PurchaseExtraChargingSlot)
 
 			// Laboratory Placement & Map
 			laboratoryRoutes.POST("/place", laboratoryHandler.PlaceLaboratory)
