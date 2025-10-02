@@ -951,22 +951,39 @@ func (s *Service) PlaceLaboratory(userID uuid.UUID, req *PlaceLaboratoryRequest)
 			}
 		}
 
-		// Check if already placed - if yes, redirect to relocate logic
+		// Check if already placed - if yes, treat as relocation
 		if lab.IsPlaced {
-			// Laboratory is already placed, use relocate logic instead
-			relocateReq := &RelocateLaboratoryRequest{
-				Latitude:  req.Latitude,
-				Longitude: req.Longitude,
+			// Laboratory is already placed, this is a relocation
+			// Calculate relocation cost
+			relocationCost := s.getRelocationCost(lab.RelocationCount)
+
+			// Update relocation count
+			newRelocationCount := lab.RelocationCount + 1
+
+			// Update laboratory location
+			now := time.Now()
+			updates := map[string]interface{}{
+				"location":           fmt.Sprintf("POINT(%f %f)", req.Longitude, req.Latitude),
+				"location_latitude":  req.Latitude,
+				"location_longitude": req.Longitude,
+				"relocation_count":   newRelocationCount,
+				"last_relocated_at":  &now,
 			}
-			relocateResp, err := s.RelocateLaboratory(userID, relocateReq)
-			if err != nil {
-				return err
+
+			if err := tx.Model(&lab).Updates(updates).Error; err != nil {
+				return fmt.Errorf("failed to relocate laboratory: %w", err)
 			}
-			// Convert RelocateLaboratoryResponse to PlaceLaboratoryResponse
+
+			// Update local lab object
+			lab.LocationLatitude = &req.Latitude
+			lab.LocationLongitude = &req.Longitude
+			lab.RelocationCount = newRelocationCount
+			lab.LastRelocatedAt = &now
+
 			result = &PlaceLaboratoryResponse{
-				Success:    relocateResp.Success,
-				Laboratory: relocateResp.Laboratory,
-				Message:    relocateResp.Message,
+				Success:    true,
+				Laboratory: &lab,
+				Message:    fmt.Sprintf("Laboratory relocated successfully for %d essence", relocationCost),
 			}
 			return nil // Return early to skip placement logic
 		}
