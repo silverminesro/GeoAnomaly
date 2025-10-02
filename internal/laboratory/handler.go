@@ -3,6 +3,7 @@ package laboratory
 import (
 	"fmt"
 	"net/http"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -520,6 +521,32 @@ func (h *Handler) PlaceLaboratory(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, result)
+}
+
+// GetUpgradeRequirements returns upgrade requirements for a specific level
+func (h *Handler) GetUpgradeRequirements(c *gin.Context) {
+	levelStr := c.Param("level")
+	level, err := strconv.Atoi(levelStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid level parameter"})
+		return
+	}
+
+	if level < 2 || level > 3 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Level must be 2 or 3"})
+		return
+	}
+
+	requirements, err := h.service.GetUpgradeRequirements(level)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success":      true,
+		"requirements": requirements,
+	})
 }
 
 // GetNearbyLaboratories returns laboratories within specified radius

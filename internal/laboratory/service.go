@@ -1288,51 +1288,6 @@ func (s *Service) getRelocationCost(relocationCount int) int {
 // 7. HELPER FUNCTIONS
 // =============================================
 
-// updateLaboratoryFeaturesFromPlayerLevel updates laboratory features based on player level
-func (s *Service) updateLaboratoryFeaturesFromPlayerLevel(lab *Laboratory, playerLevel int) error {
-	updates := map[string]interface{}{}
-
-	// Level 2: Unlock research
-	if playerLevel >= 2 && !lab.ResearchUnlocked {
-		updates["research_unlocked"] = true
-		updates["base_charging_slots"] = 2
-	}
-
-	// Level 3: Unlock crafting
-	if playerLevel >= 3 && !lab.CraftingUnlocked {
-		updates["crafting_unlocked"] = true
-		updates["base_charging_slots"] = 3
-	}
-
-	// Update laboratory level to match player level
-	labLevel := s.xpHandler.GetUserLaboratoryLevel(playerLevel)
-	if labLevel != lab.Level {
-		updates["level"] = labLevel
-	}
-
-	if len(updates) > 0 {
-		if err := s.db.Model(lab).Updates(updates).Error; err != nil {
-			return fmt.Errorf("failed to update laboratory features: %w", err)
-		}
-
-		// Update local lab object
-		for key, value := range updates {
-			switch key {
-			case "research_unlocked":
-				lab.ResearchUnlocked = value.(bool)
-			case "crafting_unlocked":
-				lab.CraftingUnlocked = value.(bool)
-			case "base_charging_slots":
-				lab.BaseChargingSlots = value.(int)
-			case "level":
-				lab.Level = value.(int)
-			}
-		}
-	}
-
-	return nil
-}
-
 // updateLaboratoryXP updates player XP through integrated XP system
 func (s *Service) updateLaboratoryXP(tx *gorm.DB, userID uuid.UUID, xpType string, amount int) error {
 	// Use integrated XP system
@@ -1385,7 +1340,7 @@ func (s *Service) validateUpgradeRequirements(userID uuid.UUID, requirements *La
 		`, userID).Scan(&credits).Error; err != nil {
 			return fmt.Errorf("failed to check user credits: %w", err)
 		}
-		
+
 		if credits < requirements.CreditsRequired {
 			return fmt.Errorf("insufficient credits: need %d, have %d", requirements.CreditsRequired, credits)
 		}
@@ -1403,18 +1358,18 @@ func (s *Service) validateUpgradeRequirements(userID uuid.UUID, requirements *La
 			AND properties->>'name' = ?
 		`
 		args := []interface{}{userID, *requirements.ArtifactRequired}
-		
+
 		if requirements.ArtifactRarity != nil {
 			query += ` AND properties->>'rarity' = ?`
 			args = append(args, *requirements.ArtifactRarity)
 		}
-		
+
 		if err := s.db.Raw(query, args...).Scan(&artifactCount).Error; err != nil {
 			return fmt.Errorf("failed to check user artifacts: %w", err)
 		}
-		
+
 		if artifactCount < requirements.ArtifactQuantity {
-			return fmt.Errorf("insufficient artifacts: need %d x %s (%s), have %d", 
+			return fmt.Errorf("insufficient artifacts: need %d x %s (%s), have %d",
 				requirements.ArtifactQuantity, *requirements.ArtifactRequired, *requirements.ArtifactRarity, artifactCount)
 		}
 	}
@@ -1445,25 +1400,25 @@ func (s *Service) processUpgradePayment(tx *gorm.DB, userID uuid.UUID, requireme
 			AND deleted_at IS NULL
 			AND properties->>'name' = ?
 		`, userID, *requirements.ArtifactRequired)
-		
+
 		if requirements.ArtifactRarity != nil {
 			query = query.Where("properties->>'rarity' = ?", *requirements.ArtifactRarity)
 		}
-		
+
 		if err := query.Limit(requirements.ArtifactQuantity).Find(&artifacts).Error; err != nil {
 			return fmt.Errorf("failed to find artifacts to consume: %w", err)
 		}
-		
+
 		if len(artifacts) < requirements.ArtifactQuantity {
 			return fmt.Errorf("not enough artifacts found to consume")
 		}
-		
+
 		// Soft delete artifacts
 		var artifactIDs []uuid.UUID
 		for _, artifact := range artifacts {
 			artifactIDs = append(artifactIDs, artifact.ID)
 		}
-		
+
 		now := time.Now()
 		if err := tx.Model(&gameplay.InventoryItem{}).Where("id IN ?", artifactIDs).Update("deleted_at", now).Error; err != nil {
 			return fmt.Errorf("failed to consume artifacts: %w", err)
@@ -1486,11 +1441,11 @@ func (s *Service) recordUpgradeHistory(tx *gorm.DB, lab *Laboratory, requirement
 			AND deleted_at IS NOT NULL
 			AND properties->>'name' = ?
 		`, lab.UserID, *requirements.ArtifactRequired)
-		
+
 		if requirements.ArtifactRarity != nil {
 			query = query.Where("properties->>'rarity' = ?", *requirements.ArtifactRarity)
 		}
-		
+
 		// Get recently deleted artifacts (within last minute)
 		recentTime := time.Now().Add(-time.Minute)
 		if err := query.Where("deleted_at > ?", recentTime).Find(&artifacts).Error; err == nil {
@@ -1503,7 +1458,7 @@ func (s *Service) recordUpgradeHistory(tx *gorm.DB, lab *Laboratory, requirement
 				if r, ok := artifact.Properties["rarity"].(string); ok {
 					rarity = r
 				}
-				
+
 				artifactsUsed = append(artifactsUsed, ArtifactUsed{
 					ArtifactID:   artifact.ID,
 					ArtifactName: name,
@@ -1516,15 +1471,24 @@ func (s *Service) recordUpgradeHistory(tx *gorm.DB, lab *Laboratory, requirement
 
 	// Create upgrade history record
 	history := LaboratoryUpgradeHistory{
-		LaboratoryID: lab.ID,
-		UserID:       lab.UserID,
-		FromLevel:    lab.Level - 1, // Previous level
-		ToLevel:      targetLevel,
-		CreditsSpent: requirements.CreditsRequired,
+		LaboratoryID:  lab.ID,
+		UserID:        lab.UserID,
+		FromLevel:     lab.Level - 1, // Previous level
+		ToLevel:       targetLevel,
+		CreditsSpent:  requirements.CreditsRequired,
 		ArtifactsUsed: artifactsUsed,
 	}
 
 	return tx.Create(&history).Error
+}
+
+// GetUpgradeRequirements returns upgrade requirements for a specific level
+func (s *Service) GetUpgradeRequirements(level int) (*LaboratoryUpgradeRequirement, error) {
+	var requirements LaboratoryUpgradeRequirement
+	if err := s.db.Where("level = ?", level).First(&requirements).Error; err != nil {
+		return nil, fmt.Errorf("failed to get upgrade requirements for level %d: %w", level, err)
+	}
+	return &requirements, nil
 }
 
 // =============================================
