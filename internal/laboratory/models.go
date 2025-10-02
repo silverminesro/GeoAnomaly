@@ -3,6 +3,7 @@ package laboratory
 import (
 	"database/sql/driver"
 	"encoding/json"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -82,6 +83,35 @@ type ArtifactUsed struct {
 	ArtifactName string    `json:"artifact_name"`
 	Rarity       string    `json:"rarity"`
 	Quantity     int       `json:"quantity"`
+}
+
+// Scan implements the sql.Scanner interface for ArtifactUsed slice
+func (a *[]ArtifactUsed) Scan(value interface{}) error {
+	if value == nil {
+		*a = []ArtifactUsed{}
+		return nil
+	}
+
+	bytes, ok := value.([]byte)
+	if !ok {
+		return fmt.Errorf("cannot scan %T into []ArtifactUsed", value)
+	}
+
+	return json.Unmarshal(bytes, a)
+}
+
+// Value implements the driver.Valuer interface for ArtifactUsed slice
+func (a []ArtifactUsed) Value() (driver.Value, error) {
+	if len(a) == 0 {
+		return "[]", nil
+	}
+
+	bytes, err := json.Marshal(a)
+	if err != nil {
+		return nil, err
+	}
+
+	return string(bytes), nil
 }
 
 // ChargingSlotPurchase represents purchase of extra charging slot
