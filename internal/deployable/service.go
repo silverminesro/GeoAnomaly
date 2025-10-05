@@ -546,6 +546,50 @@ func (s *Service) GetAbandonedDevicesInRadius(userID uuid.UUID, lat, lng float64
 	return abandonedDevices, nil
 }
 
+// DeleteDevice - odstráni zariadenie (iba vlastník). Obnoví batériu späť do inventára (soft-delete -> NULL) a zmaže zariadenie.
+func (s *Service) DeleteDevice(userID uuid.UUID, deviceID uuid.UUID) error {
+	return s.db.Transaction(func(tx *gorm.DB) error {
+		// Načítať zariadenie a overiť vlastníctvo
+		var device DeployedDevice
+		if err := tx.Where("id = ? AND owner_id = ?", deviceID, userID).First(&device).Error; err != nil {
+			if err == gorm.ErrRecordNotFound {
+				return fmt.Errorf("device not found or not owned by user")
+			}
+			return fmt.Errorf("failed to load device: %w", err)
+		}
+
+		// Ak má pripojenú batériu, obnov ju do inventára (zruš soft delete) a nastav charge_pct podľa battery_level (alebo 0%)
+		if device.BatteryInventoryID != nil {
+			level := 0
+			if device.BatteryLevel != nil {
+				level = *device.BatteryLevel
+				if level < 0 {
+					level = 0
+				}
+				if level > 100 {
+					level = 100
+				}
+			}
+			if err := tx.Exec(`
+                UPDATE gameplay.inventory_items
+                SET deleted_at = NULL,
+                    properties = jsonb_set(COALESCE(properties,'{}'::jsonb), '{charge_pct}', to_jsonb(?)::jsonb, true),
+                    updated_at = NOW()
+                WHERE id = ?
+            `, level, *device.BatteryInventoryID).Error; err != nil {
+				return fmt.Errorf("failed to restore battery in inventory: %w", err)
+			}
+		}
+
+		// Zmazať záznam zariadenia (kaskádne zmaže prístupy, cooldowny, históriu)
+		if err := tx.Delete(&DeployedDevice{}, "id = ?", deviceID).Error; err != nil {
+			return fmt.Errorf("failed to delete device: %w", err)
+		}
+
+		return nil
+	})
+}
+
 // Helper functions
 
 func (s *Service) validateTierLimits(userID uuid.UUID) error {
@@ -1186,13 +1230,13 @@ func (s *Service) createMarkerFromDevice(device DeployedDevice, visibilityType s
 	}
 
 	return MapMarker{
-		ID:             device.ID,
-		Type:           "deployed_scanner",
-		Status:         status,
-		Latitude:       device.Latitude,
-		Longitude:      device.Longitude,
-		Icon:           icon,
-		BatteryLevel:   func() int {
+		ID:        device.ID,
+		Type:      "deployed_scanner",
+		Status:    status,
+		Latitude:  device.Latitude,
+		Longitude: device.Longitude,
+		Icon:      icon,
+		BatteryLevel: func() int {
 			if device.BatteryLevel != nil {
 				return *device.BatteryLevel
 			}

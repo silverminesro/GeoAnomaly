@@ -384,15 +384,17 @@ func (h *Handler) DeleteDevice(c *gin.Context) {
 	}
 
 	deviceIDStr := c.Param("device_id")
-	_, err := uuid.Parse(deviceIDStr)
+	deviceID, err := uuid.Parse(deviceIDStr)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid device ID"})
 		return
 	}
 
-	// TODO: Implement device deletion
-	// For now, just return success
-	_ = userUUID // Suppress unused variable warning
+	if err := h.service.DeleteDevice(userUUID, deviceID); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "Device deleted successfully",
