@@ -220,6 +220,7 @@ type CooldownStatus struct {
 	CooldownUntil       *time.Time `json:"cooldown_until,omitempty"`
 	RemainingSeconds    int        `json:"remaining_seconds"`
 	CooldownDurationSec int        `json:"cooldown_duration_seconds,omitempty"`
+	Reason              string     `json:"reason,omitempty"`
 }
 
 // DeviceListResponse - response pre zoznam zariadení

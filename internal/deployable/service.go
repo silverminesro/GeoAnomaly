@@ -446,28 +446,43 @@ func (s *Service) ClaimAbandonedDevice(hackerID uuid.UUID, deviceID uuid.UUID, r
 
 // GetCooldownStatus - získa status cooldownu
 func (s *Service) GetCooldownStatus(userID uuid.UUID, deviceID uuid.UUID) (*CooldownStatus, error) {
-	var cooldown ScanCooldown
-	err := s.db.Where("device_id = ? AND user_id = ?", deviceID, userID).First(&cooldown).Error
-
-	if err == gorm.ErrRecordNotFound {
-		// Prvý sken - žiadny cooldown
-		return &CooldownStatus{
-			CanScan: true,
-		}, nil
+	// Najprv skontroluj stav zariadenia a batérie
+	var device DeployedDevice
+	if err := s.db.Where("id = ?", deviceID).First(&device).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return &CooldownStatus{CanScan: false, Reason: "device_not_found"}, nil
+		}
+		return nil, fmt.Errorf("chyba pri načítaní zariadenia")
 	}
 
+	// Ak zariadenie nie je v stave na skenovanie, vráť dôvod
+	if device.Status == DeviceStatusAbandoned {
+		return &CooldownStatus{CanScan: false, Reason: "abandoned"}, nil
+	}
+	if device.BatteryInventoryID == nil || device.BatteryLevel == nil || *device.BatteryLevel <= 0 {
+		return &CooldownStatus{CanScan: false, Reason: "battery_depleted"}, nil
+	}
+	if device.BatteryStatus != nil && (*device.BatteryStatus == "removed" || *device.BatteryStatus == "depleted") {
+		return &CooldownStatus{CanScan: false, Reason: "battery_removed"}, nil
+	}
+
+	// Potom kontrola cooldownu – chýbajúci záznam znamená, že je možné skenovať
+	var cooldown ScanCooldown
+	err := s.db.Where("device_id = ? AND user_id = ?", deviceID, userID).First(&cooldown).Error
+	if err == gorm.ErrRecordNotFound {
+		return &CooldownStatus{CanScan: true}, nil
+	}
 	if err != nil {
+		// potlačiť detailnú chybu do generickej, aby nezahlcovalo logy
 		return nil, fmt.Errorf("chyba pri kontrole cooldownu")
 	}
 
 	now := time.Now().UTC()
 	canScan := now.After(cooldown.CooldownUntil)
 	remainingSeconds := 0
-
 	if !canScan {
 		remainingSeconds = int(time.Until(cooldown.CooldownUntil).Seconds())
 	}
-
 	var until *time.Time
 	if !canScan {
 		until = &cooldown.CooldownUntil
