@@ -38,19 +38,25 @@ func NewService(db *gorm.DB) *Service {
 
 // DeployDevice - umiestni zariadenie na mapu
 func (s *Service) DeployDevice(userID uuid.UUID, req *DeployRequest) (*DeployResponse, error) {
+	log.Printf("🔧 DeployDevice: userID=%s, deviceID=%s, batteryID=%s, lat=%.6f, lng=%.6f",
+		userID, req.DeviceInventoryID, req.BatteryInventoryID, req.Latitude, req.Longitude)
+
 	// 1. Validovať tier obmedzenia
 	if err := s.validateTierLimits(userID); err != nil {
+		log.Printf("❌ DeployDevice: tier validation failed: %v", err)
 		return nil, err
 	}
 
 	// 2. Validovať vzdialenosť od hráča
 	if err := s.validateDeploymentDistance(userID, req.Latitude, req.Longitude); err != nil {
+		log.Printf("❌ DeployDevice: distance validation failed: %v", err)
 		return nil, err
 	}
 
 	// 3. Validácia inventára – hráč to musí vlastniť a kusy nesmú byť v použití
 	iq := NewInventoryQueries(s.db)
 	if err := iq.ValidateDeploymentInventory(userID, req.DeviceInventoryID, req.BatteryInventoryID); err != nil {
+		log.Printf("❌ DeployDevice: inventory validation failed: %v", err)
 		return nil, err
 	}
 
@@ -78,11 +84,13 @@ func (s *Service) DeployDevice(userID uuid.UUID, req *DeployRequest) (*DeployRes
 
 	// 5. Uložiť do databázy
 	if err := s.db.Create(&device).Error; err != nil {
+		log.Printf("❌ DeployDevice: failed to create device: %v", err)
 		return nil, fmt.Errorf("failed to create deployed device: %w", err)
 	}
 
 	// 6. Odstrániť batériu z inventára (scanner zostáva v inventári)
 	if err := s.removeBatteryFromInventory(req.BatteryInventoryID); err != nil {
+		log.Printf("❌ DeployDevice: failed to remove battery: %v", err)
 		// Ak sa nepodarí odstrániť batériu z inventára, odstráň aj nasadené zariadenie
 		s.db.Delete(&device)
 		return nil, fmt.Errorf("failed to remove battery from inventory: %w", err)
