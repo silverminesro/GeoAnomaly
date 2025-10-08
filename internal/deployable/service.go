@@ -17,12 +17,12 @@ import (
 
 // Deployment distance constants
 const (
-	// TESTOVACIA VZDIALENOST: 5km (5000m) - len pre testovanie!
+	// TESTOVACIA VZDIALENOST: 30km (30000m) - len pre testovanie!
 	// OSTRA PREVADZKA: 50m (50) - produkčné nastavenie
-	MaxDeploymentDistanceMeters = 5000 // TODO: Zmeniť na 50 pre produkciu
+	MaxDeploymentDistanceMeters = 30000 // TODO: Zmeniť na 50 pre produkciu
 
-	// Security threshold - ak je vzdialenosť > 10km, pravdepodobne sa pokúša obísť
-	SecurityDistanceThresholdMeters = 10000
+	// Security threshold - ak je vzdialenosť > 50km, pravdepodobne sa pokúša obísť
+	SecurityDistanceThresholdMeters = 50000
 )
 
 type Service struct {
@@ -95,7 +95,7 @@ func (s *Service) DeployDevice(userID uuid.UUID, req *DeployRequest) (*DeployRes
 		s.db.Delete(&device)
 		return nil, fmt.Errorf("failed to remove scanner from inventory: %w", err)
 	}
-	
+
 	if err := s.removeBatteryFromInventory(req.BatteryInventoryID); err != nil {
 		log.Printf("❌ DeployDevice: failed to remove battery: %v", err)
 		// Ak sa nepodarí odstrániť batériu z inventára, rollback všetko
