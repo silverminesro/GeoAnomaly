@@ -88,15 +88,23 @@ func (s *Service) DeployDevice(userID uuid.UUID, req *DeployRequest) (*DeployRes
 		return nil, fmt.Errorf("failed to create deployed device: %w", err)
 	}
 
-	// 6. Odstrániť batériu z inventára (scanner zostáva v inventári)
+	// 6. Odstrániť scanner a batériu z inventára (soft-delete)
+	if err := s.removeScannerFromInventory(req.DeviceInventoryID); err != nil {
+		log.Printf("❌ DeployDevice: failed to remove scanner: %v", err)
+		// Ak sa nepodarí odstrániť scanner z inventára, odstráň aj nasadené zariadenie
+		s.db.Delete(&device)
+		return nil, fmt.Errorf("failed to remove scanner from inventory: %w", err)
+	}
+	
 	if err := s.removeBatteryFromInventory(req.BatteryInventoryID); err != nil {
 		log.Printf("❌ DeployDevice: failed to remove battery: %v", err)
-		// Ak sa nepodarí odstrániť batériu z inventára, odstráň aj nasadené zariadenie
+		// Ak sa nepodarí odstrániť batériu z inventára, rollback všetko
 		s.db.Delete(&device)
+		s.restoreScannerToInventory(req.DeviceInventoryID) // Vráť scanner späť
 		return nil, fmt.Errorf("failed to remove battery from inventory: %w", err)
 	}
 
-	log.Printf("✅ Deployed device %s for user %s at [%.6f, %.6f]", device.Name, userID, req.Latitude, req.Longitude)
+	log.Printf("✅ Deployed device %s for user %s at [%.6f, %.6f] (scanner+battery removed from inventory)", device.Name, userID, req.Latitude, req.Longitude)
 
 	return &DeployResponse{
 		Success:    true,
@@ -105,16 +113,36 @@ func (s *Service) DeployDevice(userID uuid.UUID, req *DeployRequest) (*DeployRes
 	}, nil
 }
 
-// removeBatteryFromInventory odstráni batériu z inventára po nasadení (scanner zostáva)
+// removeScannerFromInventory odstráni scanner z inventára po nasadení (soft delete)
+func (s *Service) removeScannerFromInventory(scannerInventoryID uuid.UUID) error {
+	if err := s.db.Model(&InventoryItem{}).
+		Where("id = ?", scannerInventoryID).
+		Update("deleted_at", time.Now()).Error; err != nil {
+		return fmt.Errorf("failed to remove scanner from inventory: %w", err)
+	}
+	log.Printf("✅ Removed scanner %s from inventory", scannerInventoryID)
+	return nil
+}
+
+// restoreScannerToInventory obnoví scanner do inventára (soft-undelete)
+func (s *Service) restoreScannerToInventory(scannerInventoryID uuid.UUID) error {
+	if err := s.db.Model(&InventoryItem{}).
+		Where("id = ?", scannerInventoryID).
+		Update("deleted_at", nil).Error; err != nil {
+		return fmt.Errorf("failed to restore scanner to inventory: %w", err)
+	}
+	log.Printf("✅ Restored scanner %s to inventory", scannerInventoryID)
+	return nil
+}
+
+// removeBatteryFromInventory odstráni batériu z inventára po nasadení (soft delete)
 func (s *Service) removeBatteryFromInventory(batteryInventoryID uuid.UUID) error {
-	// Odstráň batériu z inventára (soft delete)
 	if err := s.db.Model(&InventoryItem{}).
 		Where("id = ?", batteryInventoryID).
 		Update("deleted_at", time.Now()).Error; err != nil {
 		return fmt.Errorf("failed to remove battery from inventory: %w", err)
 	}
-
-	log.Printf("✅ Removed battery %s from inventory (scanner stays in inventory)", batteryInventoryID)
+	log.Printf("✅ Removed battery %s from inventory", batteryInventoryID)
 	return nil
 }
 
@@ -581,6 +609,17 @@ func (s *Service) DeleteDevice(userID uuid.UUID, deviceID uuid.UUID) error {
 			return fmt.Errorf("failed to load device: %w", err)
 		}
 
+		// Obnov scanner do inventára (soft-undelete)
+		if err := tx.Exec(`
+			UPDATE gameplay.inventory_items
+			SET deleted_at = NULL,
+				updated_at = NOW()
+			WHERE id = ?
+		`, device.DeviceInventoryID).Error; err != nil {
+			return fmt.Errorf("failed to restore scanner in inventory: %w", err)
+		}
+		log.Printf("🔧 Scanner %s restored to inventory for user %s", device.DeviceInventoryID, userID)
+
 		// Ak má pripojenú batériu, obnov ju do inventára (zruš soft delete) a nastav charge_pct podľa battery_level (alebo 0%)
 		if device.BatteryInventoryID != nil {
 			level := 0
@@ -602,12 +641,14 @@ func (s *Service) DeleteDevice(userID uuid.UUID, deviceID uuid.UUID) error {
             `, level, *device.BatteryInventoryID).Error; err != nil {
 				return fmt.Errorf("failed to restore battery in inventory: %w", err)
 			}
+			log.Printf("🔋 Battery %s restored to inventory for user %s with %d%% charge", *device.BatteryInventoryID, userID, level)
 		}
 
 		// Zmazať záznam zariadenia (kaskádne zmaže prístupy, cooldowny, históriu)
 		if err := tx.Delete(&DeployedDevice{}, "id = ?", deviceID).Error; err != nil {
 			return fmt.Errorf("failed to delete device: %w", err)
 		}
+		log.Printf("🗑️ Deployed device %s (%s) deleted by user %s", deviceID, device.Name, userID)
 
 		return nil
 	})

@@ -125,10 +125,10 @@ func (iq *InventoryQueries) ValidateDeploymentInventory(userID, deviceInventoryI
 		return fmt.Errorf("batéria nie je v tvojom inventári")
 	}
 
-	// Skontroluj či scanner nie je už nasadený
+	// Skontroluj či scanner nie je už nasadený (iba aktívne zariadenia, nie depleted/abandoned)
 	var deployedCount int64
 	err = iq.db.Model(&DeployedDevice{}).
-		Where("device_inventory_id = ? AND is_active = TRUE", deviceInventoryID).
+		Where("device_inventory_id = ? AND is_active = TRUE AND status IN ('active')", deviceInventoryID).
 		Count(&deployedCount).Error
 	if err != nil {
 		return fmt.Errorf("chyba pri kontrole nasadenia scanneru: %w", err)
