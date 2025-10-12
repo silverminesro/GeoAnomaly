@@ -77,7 +77,7 @@ func (h *Handler) ScanArea(c *gin.Context) {
 		if tier0Count < 2 {
 			toSpawn := 2 - tier0Count
 			log.Printf("✅ Guaranteeing %d tier 0 zone(s) for tier 0 player (currently %d in area)", toSpawn, tier0Count)
-			tier0Zones := h.spawnDynamicZones(req.Latitude, req.Longitude, 0, toSpawn)
+			tier0Zones := h.spawnDynamicZones(req.Latitude, req.Longitude, 0, toSpawn, user.ID)
 			newZones = append(newZones, tier0Zones...)
 		}
 	} else if user.Tier == 1 {
@@ -94,12 +94,12 @@ func (h *Handler) ScanArea(c *gin.Context) {
 		}
 		if !tier0 {
 			log.Printf("✅ Guaranteeing 1 tier 0 zone for tier 1 player")
-			tier0Zones := h.spawnDynamicZones(req.Latitude, req.Longitude, 0, 1)
+			tier0Zones := h.spawnDynamicZones(req.Latitude, req.Longitude, 0, 1, user.ID)
 			newZones = append(newZones, tier0Zones...)
 		}
 		if !tier1 {
 			log.Printf("✅ Guaranteeing 1 tier 1 zone for tier 1 player")
-			tier1Zones := h.spawnDynamicZones(req.Latitude, req.Longitude, 1, 1)
+			tier1Zones := h.spawnDynamicZones(req.Latitude, req.Longitude, 1, 1, user.ID)
 			newZones = append(newZones, tier1Zones...)
 		}
 	} else if user.Tier == 2 {
@@ -120,7 +120,7 @@ func (h *Handler) ScanArea(c *gin.Context) {
 			log.Printf("✅ Guaranteeing 2 zones (randomly picked from tier 0,1,2) for tier 2 player")
 			for i := 0; i < 2; i++ {
 				randomTier := rand.Intn(3) // 0, 1 alebo 2
-				zones := h.spawnDynamicZones(req.Latitude, req.Longitude, randomTier, 1)
+				zones := h.spawnDynamicZones(req.Latitude, req.Longitude, randomTier, 1, user.ID)
 				newZones = append(newZones, zones...)
 			}
 		}
@@ -133,7 +133,7 @@ func (h *Handler) ScanArea(c *gin.Context) {
 
 	if newZonesNeeded > 0 {
 		log.Printf("🏗️ Creating %d new zones for tier %d player", newZonesNeeded, user.Tier)
-		additionalZones := h.spawnDynamicZones(req.Latitude, req.Longitude, user.Tier, newZonesNeeded)
+		additionalZones := h.spawnDynamicZones(req.Latitude, req.Longitude, user.Tier, newZonesNeeded, user.ID)
 		newZones = append(newZones, additionalZones...)
 	}
 
@@ -164,7 +164,7 @@ func (h *Handler) ScanArea(c *gin.Context) {
 }
 
 // ✅ UPDATED: spawnDynamicZones with tier-based distance spawning & minimal distance between zones
-func (h *Handler) spawnDynamicZones(lat, lng float64, playerTier int, count int) []gameplay.Zone {
+func (h *Handler) spawnDynamicZones(lat, lng float64, playerTier int, count int, userID uuid.UUID) []gameplay.Zone {
 	var newZones []gameplay.Zone
 
 	// Získaj všetky existujúce zóny v maximálnom okruhu spawnu (2km)
@@ -266,6 +266,7 @@ func (h *Handler) spawnDynamicZones(lat, lng float64, playerTier int, count int)
 
 			Properties: gameplay.JSONB{
 				"spawned_by":            "scan_area",
+				"created_by_user_id":    userID.String(),
 				"ttl_hours":             randomTTL.Hours(),
 				"biome":                 biome,
 				"danger_level":          template.DangerLevel,
