@@ -138,14 +138,30 @@ func (h *Handler) GetResearchStatus(c *gin.Context) {
 		return
 	}
 
-	// Get all active research projects
+	// Get laboratory status
 	status, err := h.service.GetLaboratoryStatus(userID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get research status: " + err.Error()})
 		return
 	}
 
-	c.JSON(http.StatusOK, status.ActiveResearch)
+	// ✅ FIX: Return complete response object for Flutter
+	// Calculate available slots
+	activeCount := len(status.ActiveResearch)
+	maxSlots := status.Laboratory.Level // Level 2 = 2 slots, Level 3 = 3 slots
+	availableSlots := maxSlots - activeCount
+	if availableSlots < 0 {
+		availableSlots = 0
+	}
+
+	// Return full response matching Flutter ResearchStatusResponse model
+	c.JSON(http.StatusOK, gin.H{
+		"active_projects":    status.ActiveResearch,
+		"completed_projects": []ResearchProject{}, // Empty for now (can be extended)
+		"available_slots":    availableSlots,
+		"max_slots":          maxSlots,
+		"total_research_xp":  0, // Can be calculated from history if needed
+	})
 }
 
 // CompleteResearch completes a research project
