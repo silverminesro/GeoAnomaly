@@ -4,11 +4,9 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"log"
 	"time"
 
 	"geoanomaly/internal/gameplay"
-	"geoanomaly/internal/menu"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -331,24 +329,8 @@ func (s *Service) StartResearch(userID uuid.UUID, req *StartResearchRequest) (*R
 			return fmt.Errorf("maximum research slots reached (%d)", maxResearchSlots)
 		}
 
-		// ✅ KROK 1: Check if user owns the artifact in inventory
-		var inventoryItem gameplay.InventoryItem
-		err := tx.Where("user_id = ? AND item_id = ? AND item_type = ?",
-			userID, req.ArtifactID, "artifact").
-			First(&inventoryItem).Error
-		if err != nil {
-			if err == gorm.ErrRecordNotFound {
-				return fmt.Errorf("artifact not found in your inventory")
-			}
-			return fmt.Errorf("failed to check artifact ownership: %w", err)
-		}
-
-		// Verify artifact quantity (must have at least 1)
-		if inventoryItem.Quantity < 1 {
-			return fmt.Errorf("artifact quantity is zero, cannot research")
-		}
-
-		log.Printf("✅ User %s owns artifact %s (qty: %d), proceeding with research", userID, req.ArtifactID, inventoryItem.Quantity)
+		// TODO: Check if user owns the artifact
+		// This would require integration with inventory system
 
 		// Calculate research time and cost
 		var duration time.Duration
@@ -367,28 +349,8 @@ func (s *Service) StartResearch(userID uuid.UUID, req *StartResearchRequest) (*R
 			return fmt.Errorf("invalid research type: %s", req.ResearchType)
 		}
 
-		// ✅ KROK 2.1: Get user credits
-		var currency menu.Currency
-		err = tx.Where("user_id = ? AND type = ?", userID, "credits").First(&currency).Error
-		if err != nil {
-			if err == gorm.ErrRecordNotFound {
-				return fmt.Errorf("credits currency not found for user")
-			}
-			return fmt.Errorf("failed to get user credits: %w", err)
-		}
-
-		// ✅ KROK 2.2: Check sufficient credits
-		if currency.Amount < cost {
-			return fmt.Errorf("insufficient credits: have %d, need %d", currency.Amount, cost)
-		}
-
-		// ✅ KROK 2.3: Deduct credits
-		currency.Amount -= cost
-		if err := tx.Save(&currency).Error; err != nil {
-			return fmt.Errorf("failed to deduct credits: %w", err)
-		}
-
-		log.Printf("💰 Deducted %d credits from user %s for %s research", cost, userID, req.ResearchType)
+		// TODO: Deduct credits from user
+		// This would require integration with user system
 
 		// Create research project
 		newProject := ResearchProject{
@@ -407,24 +369,6 @@ func (s *Service) StartResearch(userID uuid.UUID, req *StartResearchRequest) (*R
 			return fmt.Errorf("failed to create research project: %w", err)
 		}
 
-		// ✅ KROK 2.4: Create transaction record for audit trail
-		balanceBefore := currency.Amount + cost // Before deduction
-		transaction := menu.Transaction{
-			UserID:        userID,
-			Type:          "research_cost",
-			CurrencyType:  "credits",
-			Amount:        -cost,
-			BalanceBefore: balanceBefore,
-			BalanceAfter:  currency.Amount,
-			Description:   fmt.Sprintf("Research cost (%s)", req.ResearchType),
-			ReferenceID:   &newProject.ID,
-		}
-		if err := tx.Create(&transaction).Error; err != nil {
-			log.Printf("⚠️  Failed to create transaction record: %v", err)
-			// Don't fail the research if transaction logging fails
-		}
-
-		log.Printf("✅ Research project created successfully: %s", newProject.ID)
 		project = &newProject
 		return nil
 	})
@@ -455,27 +399,13 @@ func (s *Service) CompleteResearch(userID uuid.UUID, projectID uuid.UUID) (*Rese
 
 		// TODO: Generate research results based on artifact properties
 		// This would require integration with artifact system
-
-		// ✅ KROK 3: Calculate XP reward based on research type
-		var xpReward int
-		switch project.ResearchType {
-		case "basic":
-			xpReward = 25
-		case "advanced":
-			xpReward = 100
-		case "expert":
-			xpReward = 300
-		default:
-			xpReward = 25
-		}
-
 		researchResult := &ResearchResult{
 			TrueRarity:       "rare", // Placeholder
 			HiddenProperties: []string{"durability_boost", "efficiency_bonus"},
 			CraftingValue:    150,
 			MarketValue:      200,
 			SpecialEffects:   []string{"battery_life_extension"},
-			ResearchXP:       xpReward,
+			ResearchXP:       25,
 		}
 
 		// Update project
@@ -493,19 +423,11 @@ func (s *Service) CompleteResearch(userID uuid.UUID, projectID uuid.UUID) (*Rese
 			return fmt.Errorf("failed to update research project: %w", err)
 		}
 
-		// ✅ KROK 4: Award XP to user for research completion
+		// Update XP
 		xpType := fmt.Sprintf("research_%s", project.ResearchType)
 		if err := s.updateLaboratoryXP(tx, userID, xpType, researchResult.ResearchXP); err != nil {
-			log.Printf("⚠️  Failed to update XP: %v", err)
-			// Don't fail research completion if XP fails
-		} else {
-			log.Printf("⭐ Awarded %d XP to user %s for completing %s research", researchResult.ResearchXP, userID, project.ResearchType)
+			return fmt.Errorf("failed to update XP: %w", err)
 		}
-
-		// ✅ KROK 5: Log research completion
-		// Note: Since InventoryItem doesn't have locking mechanism,
-		// artifact remains available in inventory during research
-		log.Printf("🔬 Research completed for artifact %s by user %s", project.ArtifactID, userID)
 
 		result = researchResult
 		return nil
