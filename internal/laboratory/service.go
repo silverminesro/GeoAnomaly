@@ -390,14 +390,28 @@ func (s *Service) StartResearch(userID uuid.UUID, req *StartResearchRequest) (*R
 
 		log.Printf("💰 Deducted %d credits from user %s for %s research", cost, userID, req.ResearchType)
 
+		// Validate accuracy (required for active mode)
+		if req.Accuracy == nil {
+			return fmt.Errorf("accuracy is required for research")
+		}
+		if *req.Accuracy < 0 || *req.Accuracy > 100 {
+			return fmt.Errorf("accuracy must be between 0 and 100, got %d", *req.Accuracy)
+		}
+
+		// Server time (cannot be manipulated by client)
+		serverTime := time.Now()
+
 		// Create research project
 		newProject := ResearchProject{
 			UserID:        userID,
 			LaboratoryID:  lab.ID,
 			ArtifactID:    req.ArtifactID,
 			ResearchType:  req.ResearchType,
-			StartTime:     time.Now(),
-			EndTime:       time.Now().Add(duration),
+			Mode:            "active",
+			SetupAccuracy:   req.Accuracy,
+			BonusMultiplier: 1.0, // Currently always 1.0, multiplier logic can be added later
+			StartTime:     serverTime,
+			EndTime:       serverTime.Add(duration), // Use server time for end time too
 			Status:        "active",
 			ResearchLevel: lab.Level,
 			Cost:          cost,
@@ -449,8 +463,11 @@ func (s *Service) CompleteResearch(userID uuid.UUID, projectID uuid.UUID) (*Rese
 			return fmt.Errorf("research project is not active")
 		}
 
-		if time.Now().Before(project.EndTime) {
-			return fmt.Errorf("research is not yet complete")
+		// 🔒 CRITICAL TIME VALIDATION - Server-side enforcement
+		serverTime := time.Now()
+		if serverTime.Before(project.EndTime) {
+			remainingMinutes := int(project.EndTime.Sub(serverTime).Minutes())
+			return fmt.Errorf("research not complete yet, %d minutes remaining", remainingMinutes)
 		}
 
 		// TODO: Generate research results based on artifact properties

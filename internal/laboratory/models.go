@@ -136,11 +136,17 @@ type ChargingSlotPurchase struct {
 
 // ResearchProject represents an artifact research project
 type ResearchProject struct {
-	ID            uuid.UUID `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
-	UserID        uuid.UUID `json:"user_id" gorm:"type:uuid;not null"`
-	LaboratoryID  uuid.UUID `json:"laboratory_id" gorm:"type:uuid;not null"`
-	ArtifactID    uuid.UUID `json:"artifact_id" gorm:"type:uuid;not null"`
-	ResearchType  string    `json:"research_type" gorm:"type:varchar(50);not null;check:research_type IN ('basic', 'advanced', 'expert')"`
+	ID           uuid.UUID `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	UserID       uuid.UUID `json:"user_id" gorm:"type:uuid;not null"`
+	LaboratoryID uuid.UUID `json:"laboratory_id" gorm:"type:uuid;not null"`
+	ArtifactID   uuid.UUID `json:"artifact_id" gorm:"type:uuid;not null"`
+	ResearchType string    `json:"research_type" gorm:"type:varchar(50);not null;check:research_type IN ('basic', 'advanced', 'expert')"`
+
+	// Active mode fields (minigame)
+	Mode            string  `json:"mode" gorm:"type:varchar(20);not null;default:'active'"`
+	SetupAccuracy   *int    `json:"setup_accuracy,omitempty" gorm:"type:integer"`
+	BonusMultiplier float64 `json:"bonus_multiplier" gorm:"type:numeric(4,2);not null;default:1.00"`
+
 	StartTime     time.Time `json:"start_time" gorm:"not null"`
 	EndTime       time.Time `json:"end_time" gorm:"not null"`
 	Status        string    `json:"status" gorm:"type:varchar(20);not null;default:'active';check:status IN ('active', 'completed', 'failed', 'cancelled')"`
@@ -148,6 +154,7 @@ type ResearchProject struct {
 	Results       *JSONB    `json:"results,omitempty" gorm:"type:jsonb"`
 	Cost          int       `json:"cost" gorm:"not null"`
 	CreatedAt     time.Time `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt     time.Time `json:"updated_at" gorm:"autoUpdateTime"`
 
 	// Relations
 	User       *User       `json:"user,omitempty" gorm:"foreignKey:UserID"`
@@ -380,6 +387,8 @@ type UpgradeLaboratoryRequest struct {
 type StartResearchRequest struct {
 	ArtifactID   uuid.UUID `json:"artifact_id" binding:"required"`
 	ResearchType string    `json:"research_type" binding:"required,oneof=basic advanced expert"`
+	Mode         string    `json:"mode" binding:"omitempty,oneof=active"`
+	Accuracy     *int      `json:"accuracy" binding:"required,min=0,max=100"`
 }
 
 // StartCraftingRequest represents crafting start request
