@@ -100,6 +100,16 @@ func (h *Handler) DeleteItem(c *gin.Context) {
 		return
 	}
 
+	// 🔒 Check if item is locked in any activity
+	if item.LockedInActivity != nil && *item.LockedInActivity != "" {
+		_ = tx.Rollback()
+		c.JSON(http.StatusConflict, gin.H{
+			"success": false,
+			"error":   fmt.Sprintf("Item is currently locked in %s. Cannot delete until activity completes.", *item.LockedInActivity),
+		})
+		return
+	}
+
 	// Zisti „použitie" itemu
 	var inUseAsBattery int64
 	if err := tx.

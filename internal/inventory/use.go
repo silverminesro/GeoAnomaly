@@ -35,6 +35,15 @@ func (h *Handler) UseItem(c *gin.Context) {
 		return
 	}
 
+	// 🔒 Check if item is locked in any activity
+	if item.LockedInActivity != nil && *item.LockedInActivity != "" {
+		c.JSON(http.StatusConflict, gin.H{
+			"success": false,
+			"error":   "Item is currently locked in " + *item.LockedInActivity + ". Cannot use until activity completes.",
+		})
+		return
+	}
+
 	// Example: reduce quantity, delete if zero
 	if item.Quantity > 1 {
 		item.Quantity--
