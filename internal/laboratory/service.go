@@ -348,6 +348,11 @@ func (s *Service) StartResearch(userID uuid.UUID, req *StartResearchRequest) (*R
 			return fmt.Errorf("artifact quantity is zero, cannot research")
 		}
 
+		// 🔒 Check if artifact is already locked
+		if inventoryItem.LockedInActivity != nil && *inventoryItem.LockedInActivity != "" {
+			return fmt.Errorf("artifact is currently locked in %s", *inventoryItem.LockedInActivity)
+		}
+
 		log.Printf("✅ User %s owns artifact %s (qty: %d), proceeding with research", userID, req.ArtifactID, inventoryItem.Quantity)
 
 		// Calculate research time and cost
@@ -403,23 +408,44 @@ func (s *Service) StartResearch(userID uuid.UUID, req *StartResearchRequest) (*R
 
 		// Create research project
 		newProject := ResearchProject{
-			UserID:        userID,
-			LaboratoryID:  lab.ID,
-			ArtifactID:    req.ArtifactID,
-			ResearchType:  req.ResearchType,
+			UserID:          userID,
+			LaboratoryID:    lab.ID,
+			ArtifactID:      req.ArtifactID,
+			ResearchType:    req.ResearchType,
 			Mode:            "active",
 			SetupAccuracy:   req.Accuracy,
 			BonusMultiplier: 1.0, // Currently always 1.0, multiplier logic can be added later
-			StartTime:     serverTime,
-			EndTime:       serverTime.Add(duration), // Use server time for end time too
-			Status:        "active",
-			ResearchLevel: lab.Level,
-			Cost:          cost,
+			StartTime:       serverTime,
+			EndTime:         serverTime.Add(duration), // Use server time for end time too
+			Status:          "active",
+			ResearchLevel:   lab.Level,
+			Cost:            cost,
 		}
 
 		if err := tx.Create(&newProject).Error; err != nil {
 			return fmt.Errorf("failed to create research project: %w", err)
 		}
+
+		// 🔒 KROK 2.3.5: Atomically lock artifact (prevents race conditions)
+		lockedActivity := "research"
+		lockResult := tx.Model(&gameplay.InventoryItem{}).
+			Where("id = ? AND user_id = ? AND (locked_in_activity IS NULL OR locked_until < ?)",
+				inventoryItem.ID, userID, serverTime).
+			Updates(map[string]interface{}{
+				"locked_in_activity":  lockedActivity,
+				"locked_until":        newProject.EndTime,
+				"locked_reference_id": newProject.ID,
+			})
+
+		if lockResult.Error != nil {
+			return fmt.Errorf("failed to lock artifact: %w", lockResult.Error)
+		}
+
+		if lockResult.RowsAffected == 0 {
+			return fmt.Errorf("artifact is currently locked or expired lock could not be acquired")
+		}
+
+		log.Printf("🔒 Locked artifact %s in research until %s", req.ArtifactID, newProject.EndTime.Format(time.RFC3339))
 
 		// ✅ KROK 2.4: Create transaction record for audit trail
 		balanceBefore := currency.Amount + cost // Before deduction
@@ -519,9 +545,33 @@ func (s *Service) CompleteResearch(userID uuid.UUID, projectID uuid.UUID) (*Rese
 			log.Printf("⭐ Awarded %d XP to user %s for completing %s research", researchResult.ResearchXP, userID, project.ResearchType)
 		}
 
-		// ✅ KROK 5: Log research completion
-		// Note: Since InventoryItem doesn't have locking mechanism,
-		// artifact remains available in inventory during research
+		// 🔓 KROK 5: Unlock and consume artifact
+		var inventoryItem gameplay.InventoryItem
+		if err := tx.Where("user_id = ? AND item_id = ? AND item_type = ?",
+			userID, project.ArtifactID, "artifact").First(&inventoryItem).Error; err != nil {
+			log.Printf("⚠️  Failed to find artifact for unlock: %v", err)
+			// Don't fail research completion if artifact not found (might have been deleted)
+		} else {
+			// Consume artifact (quantity - 1)
+			if inventoryItem.Quantity > 0 {
+				inventoryItem.Quantity -= 1
+				log.Printf("📦 Consumed artifact %s, remaining quantity: %d", project.ArtifactID, inventoryItem.Quantity)
+			}
+
+			// Unlock artifact
+			inventoryItem.LockedInActivity = nil
+			inventoryItem.LockedUntil = nil
+			inventoryItem.LockedReferenceID = nil
+
+			if err := tx.Save(&inventoryItem).Error; err != nil {
+				log.Printf("⚠️  Failed to unlock/consume artifact: %v", err)
+				// Don't fail research completion if unlock fails
+			} else {
+				log.Printf("🔓 Unlocked and consumed artifact %s", project.ArtifactID)
+			}
+		}
+
+		// ✅ KROK 6: Log research completion
 		log.Printf("🔬 Research completed for artifact %s by user %s", project.ArtifactID, userID)
 
 		result = researchResult
