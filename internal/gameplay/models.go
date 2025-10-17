@@ -189,6 +189,11 @@ type InventoryItem struct {
 	Quantity   int       `json:"quantity" gorm:"default:1"`
 	AcquiredAt time.Time `json:"acquired_at" gorm:"autoCreateTime"`
 
+	// Locking system (for research, crafting, deployment, etc.)
+	LockedInActivity  *string    `json:"locked_in_activity,omitempty" gorm:"type:varchar(50)"`
+	LockedUntil       *time.Time `json:"locked_until,omitempty"`
+	LockedReferenceID *uuid.UUID `json:"locked_reference_id,omitempty" gorm:"type:uuid"`
+
 	// Relationships
 	User *User `json:"user,omitempty" gorm:"foreignKey:UserID"`
 }
