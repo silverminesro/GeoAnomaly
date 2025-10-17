@@ -396,11 +396,8 @@ func (s *Service) StartResearch(userID uuid.UUID, req *StartResearchRequest) (*R
 		log.Printf("💰 Deducted %d credits from user %s for %s research", cost, userID, req.ResearchType)
 
 		// Validate accuracy (required for active mode)
-		if req.Accuracy == nil {
-			return fmt.Errorf("accuracy is required for research")
-		}
-		if *req.Accuracy < 0 || *req.Accuracy > 100 {
-			return fmt.Errorf("accuracy must be between 0 and 100, got %d", *req.Accuracy)
+		if req.Accuracy < 0 || req.Accuracy > 100 {
+			return fmt.Errorf("accuracy must be between 0 and 100, got %d", req.Accuracy)
 		}
 
 		// Server time (cannot be manipulated by client)

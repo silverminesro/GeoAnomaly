@@ -144,7 +144,7 @@ type ResearchProject struct {
 
 	// Active mode fields (minigame)
 	Mode            string  `json:"mode" gorm:"type:varchar(20);not null;default:'active'"`
-	SetupAccuracy   *int    `json:"setup_accuracy,omitempty" gorm:"type:integer"`
+	SetupAccuracy   int     `json:"setup_accuracy" gorm:"type:integer;not null;default:0"`
 	BonusMultiplier float64 `json:"bonus_multiplier" gorm:"type:numeric(4,2);not null;default:1.00"`
 
 	StartTime     time.Time `json:"start_time" gorm:"not null"`
@@ -388,7 +388,7 @@ type StartResearchRequest struct {
 	ArtifactID   uuid.UUID `json:"artifact_id" binding:"required"`
 	ResearchType string    `json:"research_type" binding:"required,oneof=basic advanced expert"`
 	Mode         string    `json:"mode" binding:"omitempty,oneof=active"`
-	Accuracy     *int      `json:"accuracy" binding:"required,min=0,max=100"`
+	Accuracy     int       `json:"accuracy" binding:"required,min=0,max=100"`
 }
 
 // StartCraftingRequest represents crafting start request
