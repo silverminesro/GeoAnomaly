@@ -404,11 +404,16 @@ func (s *Service) StartResearch(userID uuid.UUID, req *StartResearchRequest) (*R
 		serverTime := time.Now()
 
 		// Create research project
+		artifactName := req.ArtifactName
+		if artifactName == "" {
+			artifactName = "Unknown Artifact"
+		}
+
 		newProject := ResearchProject{
 			UserID:          userID,
 			LaboratoryID:    lab.ID,
 			ArtifactID:      req.ArtifactID,
-			ArtifactName:    req.ArtifactName,
+			ArtifactName:    artifactName,
 			ResearchType:    req.ResearchType,
 			Mode:            "active",
 			SetupAccuracy:   req.Accuracy,
