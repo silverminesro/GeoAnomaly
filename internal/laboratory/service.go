@@ -408,6 +408,7 @@ func (s *Service) StartResearch(userID uuid.UUID, req *StartResearchRequest) (*R
 			UserID:          userID,
 			LaboratoryID:    lab.ID,
 			ArtifactID:      req.ArtifactID,
+			ArtifactName:    req.ArtifactName,
 			ResearchType:    req.ResearchType,
 			Mode:            "active",
 			SetupAccuracy:   req.Accuracy,

@@ -140,6 +140,7 @@ type ResearchProject struct {
 	UserID       uuid.UUID `json:"user_id" gorm:"type:uuid;not null"`
 	LaboratoryID uuid.UUID `json:"laboratory_id" gorm:"type:uuid;not null"`
 	ArtifactID   uuid.UUID `json:"artifact_id" gorm:"type:uuid;not null"`
+	ArtifactName string    `json:"artifact_name" gorm:"type:varchar(200);not null;default:'Unknown Artifact'"`
 	ResearchType string    `json:"research_type" gorm:"type:varchar(50);not null;check:research_type IN ('basic', 'advanced', 'expert')"`
 
 	// Active mode fields (minigame)
@@ -386,6 +387,7 @@ type UpgradeLaboratoryRequest struct {
 // StartResearchRequest represents research start request
 type StartResearchRequest struct {
 	ArtifactID   uuid.UUID `json:"artifact_id" binding:"required"`
+	ArtifactName string    `json:"artifact_name,omitempty"`
 	ResearchType string    `json:"research_type" binding:"required,oneof=basic advanced expert"`
 	Mode         string    `json:"mode" binding:"omitempty,oneof=active"`
 	Accuracy     int       `json:"accuracy" binding:"required,min=0,max=100"`
