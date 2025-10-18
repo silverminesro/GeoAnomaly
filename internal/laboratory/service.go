@@ -167,51 +167,11 @@ func (s *Service) GetLaboratoryStatus(userID uuid.UUID) (*LaboratoryStatusRespon
 		}
 	}
 
-	// Get active research projects (Level 2+) with artifact information
+	// Get active research projects (Level 2+)
 	var activeResearch []ResearchProject
 	if lab.ResearchUnlocked {
-		// Use raw SQL to join with inventory_items and get artifact info from properties
-		query := `
-			SELECT rp.*, 
-			       COALESCE(ai.properties::jsonb->>'name', ai.properties::jsonb->>'display_name', 'Unknown Artifact') as artifact_name,
-			       COALESCE(ai.properties::jsonb->>'rarity', 'common') as artifact_rarity
-			FROM laboratory.research_projects rp
-			LEFT JOIN gameplay.inventory_items ai ON rp.artifact_id = ai.item_id AND ai.user_id = rp.user_id
-			WHERE rp.user_id = ? AND rp.status = 'active'
-		`
-
-		rows, err := s.db.Raw(query, userID).Rows()
-		if err != nil {
+		if err := s.db.Where("user_id = ? AND status = 'active'", userID).Find(&activeResearch).Error; err != nil {
 			return nil, fmt.Errorf("failed to get active research: %w", err)
-		}
-		defer rows.Close()
-
-		for rows.Next() {
-			var project ResearchProject
-			var artifactName, artifactRarity string
-
-			err := rows.Scan(
-				&project.ID, &project.UserID, &project.LaboratoryID, &project.ArtifactID,
-				&project.ResearchType, &project.Mode, &project.SetupAccuracy, &project.BonusMultiplier,
-				&project.StartTime, &project.EndTime, &project.Status, &project.ResearchLevel,
-				&project.Results, &project.Cost, &project.CreatedAt, &project.UpdatedAt,
-				&artifactName, &artifactRarity,
-			)
-			if err != nil {
-				return nil, fmt.Errorf("failed to scan research project: %w", err)
-			}
-
-			// Store artifact info in Results JSONB field temporarily
-			if project.Results == nil {
-				project.Results = &JSONB{}
-			}
-			artifactInfo := map[string]interface{}{
-				"name":   artifactName,
-				"rarity": artifactRarity,
-			}
-			*project.Results = JSONB(artifactInfo)
-
-			activeResearch = append(activeResearch, project)
 		}
 	}
 

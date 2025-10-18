@@ -156,10 +156,6 @@ type ResearchProject struct {
 	CreatedAt     time.Time `json:"created_at" gorm:"autoCreateTime"`
 	UpdatedAt     time.Time `json:"updated_at" gorm:"autoUpdateTime"`
 
-	// Computed fields from JOIN queries (not stored in DB)
-	ArtifactName   string `json:"artifact_name,omitempty" gorm:"-"`
-	ArtifactRarity string `json:"artifact_rarity,omitempty" gorm:"-"`
-
 	// Relations
 	User       *User       `json:"user,omitempty" gorm:"foreignKey:UserID"`
 	Laboratory *Laboratory `json:"laboratory,omitempty" gorm:"foreignKey:LaboratoryID"`
