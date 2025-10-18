@@ -173,8 +173,8 @@ func (s *Service) GetLaboratoryStatus(userID uuid.UUID) (*LaboratoryStatusRespon
 		// Use raw SQL to join with inventory_items and get artifact info from properties
 		query := `
 			SELECT rp.*, 
-			       COALESCE(ai.properties->>'name', ai.properties->>'display_name', 'Unknown Artifact') as artifact_name,
-			       COALESCE(ai.properties->>'rarity', 'common') as artifact_rarity
+			       COALESCE(ai.properties::jsonb->>'name', ai.properties::jsonb->>'display_name', 'Unknown Artifact') as artifact_name,
+			       COALESCE(ai.properties::jsonb->>'rarity', 'common') as artifact_rarity
 			FROM laboratory.research_projects rp
 			LEFT JOIN gameplay.inventory_items ai ON rp.artifact_id = ai.item_id AND ai.user_id = rp.user_id
 			WHERE rp.user_id = ? AND rp.status = 'active'
