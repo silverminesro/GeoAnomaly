@@ -360,7 +360,7 @@ func (s *Service) StartResearch(userID uuid.UUID, req *StartResearchRequest) (*R
 		var cost int
 		switch req.ResearchType {
 		case "basic":
-			duration = 1 * time.Hour
+			duration = 10 * time.Minute
 			cost = 100
 		case "advanced":
 			duration = 4 * time.Hour
@@ -429,26 +429,13 @@ func (s *Service) StartResearch(userID uuid.UUID, req *StartResearchRequest) (*R
 			return fmt.Errorf("failed to create research project: %w", err)
 		}
 
-		// 🔒 KROK 2.3.5: Atomically lock artifact (prevents race conditions)
-		lockedActivity := "research"
-		lockResult := tx.Model(&gameplay.InventoryItem{}).
-			Where("id = ? AND user_id = ? AND (locked_in_activity IS NULL OR locked_until < ?)",
-				inventoryItem.ID, userID, serverTime).
-			Updates(map[string]interface{}{
-				"locked_in_activity":  lockedActivity,
-				"locked_until":        newProject.EndTime,
-				"locked_reference_id": newProject.ID,
-			})
-
-		if lockResult.Error != nil {
-			return fmt.Errorf("failed to lock artifact: %w", lockResult.Error)
+		// 🔒 KROK 2.3.5: Remove artifact from inventory during research
+		// This prevents player from manipulating it while research is active
+		if err := tx.Delete(&inventoryItem).Error; err != nil {
+			return fmt.Errorf("failed to remove artifact from inventory: %w", err)
 		}
 
-		if lockResult.RowsAffected == 0 {
-			return fmt.Errorf("artifact is currently locked or expired lock could not be acquired")
-		}
-
-		log.Printf("🔒 Locked artifact %s in research until %s", req.ArtifactID, newProject.EndTime.Format(time.RFC3339))
+		log.Printf("🗑️ Removed artifact %s from inventory during research", req.ArtifactID)
 
 		// ✅ KROK 2.4: Create transaction record for audit trail
 		balanceBefore := currency.Amount + cost // Before deduction
@@ -548,31 +535,10 @@ func (s *Service) CompleteResearch(userID uuid.UUID, projectID uuid.UUID) (*Rese
 			log.Printf("⭐ Awarded %d XP to user %s for completing %s research", researchResult.ResearchXP, userID, project.ResearchType)
 		}
 
-		// 🔓 KROK 5: Unlock and consume artifact
-		var inventoryItem gameplay.InventoryItem
-		if err := tx.Where("user_id = ? AND item_id = ? AND item_type = ?",
-			userID, project.ArtifactID, "artifact").First(&inventoryItem).Error; err != nil {
-			log.Printf("⚠️  Failed to find artifact for unlock: %v", err)
-			// Don't fail research completion if artifact not found (might have been deleted)
-		} else {
-			// Consume artifact (quantity - 1)
-			if inventoryItem.Quantity > 0 {
-				inventoryItem.Quantity -= 1
-				log.Printf("📦 Consumed artifact %s, remaining quantity: %d", project.ArtifactID, inventoryItem.Quantity)
-			}
-
-			// Unlock artifact
-			inventoryItem.LockedInActivity = nil
-			inventoryItem.LockedUntil = nil
-			inventoryItem.LockedReferenceID = nil
-
-			if err := tx.Save(&inventoryItem).Error; err != nil {
-				log.Printf("⚠️  Failed to unlock/consume artifact: %v", err)
-				// Don't fail research completion if unlock fails
-			} else {
-				log.Printf("🔓 Unlocked and consumed artifact %s", project.ArtifactID)
-			}
-		}
+		// 🔓 KROK 5: Consume artifact (research destroys the artifact)
+		// Artifact was removed from inventory during research start
+		// Research completion consumes the artifact permanently
+		log.Printf("📦 Research completed - artifact %s consumed permanently", project.ArtifactID)
 
 		// ✅ KROK 6: Log research completion
 		log.Printf("🔬 Research completed for artifact %s by user %s", project.ArtifactID, userID)
