@@ -128,11 +128,6 @@ func setupRoutes(db *gorm.DB, redisClient *redis.Client, r2Client *media.R2Clien
 
 	// API v1 group
 	v1 := router.Group("/api/" + GetEnvVar("API_VERSION", "v1"))
-
-	// 🔐 Globálny TierExpirationMiddleware - kontroluje expiráciu tier pri každom authenticated requeste
-	// Middleware automaticky skipne public endpoints (keď user_id nie je v contexte)
-	v1.Use(middleware.TierExpirationMiddleware(menuHandler.GetService()))
-
 	{
 		// Basic test endpoints
 		v1.GET("/test", func(c *gin.Context) {
@@ -357,6 +352,7 @@ func setupRoutes(db *gorm.DB, redisClient *redis.Client, r2Client *media.R2Clien
 	// ==========================================
 	userRoutes := v1.Group("/user")
 	userRoutes.Use(middleware.JWTAuth())
+	userRoutes.Use(middleware.TierExpirationMiddleware(menuHandler.GetService()))
 	{
 		userRoutes.GET("/profile", userHandler.GetProfile)
 		userRoutes.PUT("/profile", userHandler.UpdateProfile)
@@ -372,6 +368,7 @@ func setupRoutes(db *gorm.DB, redisClient *redis.Client, r2Client *media.R2Clien
 	// ==========================================
 	inventoryRoutes := v1.Group("/inventory")
 	inventoryRoutes.Use(middleware.JWTAuth())
+	inventoryRoutes.Use(middleware.TierExpirationMiddleware(menuHandler.GetService()))
 	{
 		inventoryRoutes.GET("/items", inventoryHandler.GetInventory)
 		inventoryRoutes.GET("/summary", inventoryHandler.GetInventorySummary)
@@ -387,6 +384,7 @@ func setupRoutes(db *gorm.DB, redisClient *redis.Client, r2Client *media.R2Clien
 	// ==========================================
 	loadoutRoutes := v1.Group("/loadout")
 	loadoutRoutes.Use(middleware.JWTAuth())
+	loadoutRoutes.Use(middleware.TierExpirationMiddleware(menuHandler.GetService()))
 	{
 		loadoutRoutes.GET("/slots", loadoutHandler.GetLoadoutSlots)
 		loadoutRoutes.GET("/user", loadoutHandler.GetUserLoadout)
@@ -399,6 +397,7 @@ func setupRoutes(db *gorm.DB, redisClient *redis.Client, r2Client *media.R2Clien
 		// Scanner routes
 		scannerRoutes := v1.Group("/scanner")
 		scannerRoutes.Use(middleware.JWTAuth())
+		scannerRoutes.Use(middleware.TierExpirationMiddleware(menuHandler.GetService()))
 		{
 			scannerRoutes.GET("/catalog", scannerHandler.GetScannerCatalog)
 			scannerRoutes.GET("/instance", scannerHandler.GetScannerInstance)
@@ -450,6 +449,7 @@ func setupRoutes(db *gorm.DB, redisClient *redis.Client, r2Client *media.R2Clien
 		// Laboratory System Routes
 		laboratoryRoutes := v1.Group("/laboratory")
 		laboratoryRoutes.Use(middleware.JWTAuth())
+		laboratoryRoutes.Use(middleware.TierExpirationMiddleware(menuHandler.GetService()))
 		{
 			// Laboratory Management
 			laboratoryRoutes.GET("/status", laboratoryHandler.GetLaboratoryStatus)
@@ -493,6 +493,7 @@ func setupRoutes(db *gorm.DB, redisClient *redis.Client, r2Client *media.R2Clien
 	// ==========================================
 	gameRoutes := v1.Group("/game")
 	gameRoutes.Use(middleware.JWTAuth())
+	gameRoutes.Use(middleware.TierExpirationMiddleware(menuHandler.GetService()))
 	{
 		gameRoutes.POST("/scan-area", gameHandler.ScanArea)
 
@@ -523,6 +524,7 @@ func setupRoutes(db *gorm.DB, redisClient *redis.Client, r2Client *media.R2Clien
 	// ==========================================
 	locationRoutes := v1.Group("/location")
 	locationRoutes.Use(middleware.JWTAuth())
+	locationRoutes.Use(middleware.TierExpirationMiddleware(menuHandler.GetService()))
 	{
 		locationRoutes.POST("/update", locationHandler.UpdateLocation)
 		locationRoutes.GET("/nearby", locationHandler.GetNearbyPlayers)
@@ -539,7 +541,7 @@ func setupRoutes(db *gorm.DB, redisClient *redis.Client, r2Client *media.R2Clien
 	// ==========================================
 	menuRoutes := v1.Group("/menu")
 	menuRoutes.Use(middleware.JWTAuth())
-	// TierExpirationMiddleware už je globálne na v1 group
+	menuRoutes.Use(middleware.TierExpirationMiddleware(menuHandler.GetService()))
 	{
 		// Currency endpoints
 		menuRoutes.GET("/currency/all", menuHandler.GetAllUserCurrencies)
