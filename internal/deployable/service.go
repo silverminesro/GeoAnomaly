@@ -1057,6 +1057,8 @@ func (s *Service) calculateSignalStrength(distanceM int, maxRangeM int) float64 
 func (s *Service) GetMapMarkers(userID uuid.UUID, lat, lng float64) (*MapMarkersResponse, error) {
 	var markers []MapMarker
 
+	log.Printf("🗺️ [MAP MARKERS] Loading markers for user %s at [%.6f, %.6f]", userID, lat, lng)
+
 	// 1. Vlastné scannery (do 50km) - vždy viditeľné pre majiteľa
 	ownMarkers, err := s.getOwnScanners(userID, lat, lng, 50.0)
 	if err != nil {
@@ -1084,6 +1086,7 @@ func (s *Service) GetMapMarkers(userID uuid.UUID, lat, lng float64) (*MapMarkers
 	if err != nil {
 		return nil, fmt.Errorf("chyba pri načítaní scannerov pre scan data: %w", err)
 	}
+	log.Printf("🗺️ [MAP MARKERS] Found %d foreign scanners (scan_data) within 200m", len(scanDataMarkers))
 	markers = append(markers, scanDataMarkers...)
 
 	// 5) Doplň per-user cooldown do markerov (CanScan + CooldownUntil)
@@ -1283,6 +1286,7 @@ func (s *Service) createMarkerFromDevice(device DeployedDevice, visibilityType s
 	// Cudzie scannery (scan_data) majú tmavo šedú ikonu namiesto zelenej
 	if visibilityType == "scan_data" && icon == "scanner_green" {
 		icon = "scanner_dark_gray"
+		log.Printf("🎨 [MARKER] Cudzí scanner %s zmenený na tmavo šedý (visibility: %s)", device.ID, visibilityType)
 	}
 
 	// Určiť interakcie
