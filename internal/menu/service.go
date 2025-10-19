@@ -3,6 +3,7 @@ package menu
 import (
 	"errors"
 	"fmt"
+	"log"
 	"time"
 
 	"geoanomaly/internal/common"
@@ -807,20 +808,31 @@ func (s *Service) CheckAndResetExpiredTier(userID uuid.UUID) error {
 	var user User
 	err := s.db.First(&user, userID).Error
 	if err != nil {
+		log.Printf("❌ [TIER SERVICE] Failed to find user %s: %v", userID.String(), err)
 		return err
 	}
 
+	log.Printf("📊 [TIER SERVICE] User %s - Tier: %d, Expires: %v", userID.String(), user.Tier, user.TierExpires)
+
 	// Ak má tier a je expirovaný
 	if user.Tier > 0 && user.TierExpires != nil && user.TierExpires.Before(time.Now()) {
+		log.Printf("🔄 [TIER SERVICE] Resetting expired tier for user %s (tier %d expired at %v)", userID.String(), user.Tier, user.TierExpires)
 		// Reset na tier 0
-		return s.db.Model(&User{}).
+		err := s.db.Model(&User{}).
 			Where("id = ?", userID).
 			Updates(map[string]interface{}{
 				"tier":         0,
 				"tier_expires": nil,
 			}).Error
+		if err != nil {
+			log.Printf("❌ [TIER SERVICE] Failed to reset tier for user %s: %v", userID.String(), err)
+			return err
+		}
+		log.Printf("✅ [TIER SERVICE] Successfully reset tier to 0 for user %s", userID.String())
+		return nil
 	}
 
+	log.Printf("✓ [TIER SERVICE] No action needed for user %s", userID.String())
 	return nil
 }
 
