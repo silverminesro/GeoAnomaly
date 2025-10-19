@@ -237,7 +237,7 @@ type MapMarker struct {
 	Status         string     `json:"status"` // "active", "abandoned", "hacked", "battery_dead"
 	Latitude       float64    `json:"latitude"`
 	Longitude      float64    `json:"longitude"`
-	Icon           string     `json:"icon"` // "scanner_green", "scanner_gray", "scanner_blue", "scanner_red"
+	Icon           string     `json:"icon"` // "scanner_green", "scanner_gray", "scanner_blue", "scanner_red", "scanner_dark_gray"
 	BatteryLevel   int        `json:"battery_level"`
 	ScanRadiusKm   float64    `json:"scan_radius_km"`
 	CanHack        bool       `json:"can_hack"`

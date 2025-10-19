@@ -1280,6 +1280,11 @@ func (s *Service) createMarkerFromDevice(device DeployedDevice, visibilityType s
 	// Určiť status a ikonu
 	status, icon := s.determineDeviceStatusAndIcon(device)
 
+	// Cudzie scannery (scan_data) majú tmavo šedú ikonu namiesto zelenej
+	if visibilityType == "scan_data" && icon == "scanner_green" {
+		icon = "scanner_dark_gray"
+	}
+
 	// Určiť interakcie
 	canHack := device.Status == DeviceStatusActive && device.IsActive
 	canScan := device.Status == DeviceStatusActive && device.IsActive &&
