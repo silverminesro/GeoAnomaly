@@ -238,6 +238,13 @@ func initDB() (*gorm.DB, error) {
 		return nil, fmt.Errorf("failed to connect to database: %w", err)
 	}
 
+	// Set search_path explicitly after connection
+	if err := db.Exec("SET search_path TO auth,gameplay,market,laboratory,public").Error; err != nil {
+		log.Printf("⚠️  Warning: Failed to set search_path: %v", err)
+	} else {
+		log.Println("✅ Search path set to: auth,gameplay,market,laboratory,public")
+	}
+
 	return db, nil
 }
 
