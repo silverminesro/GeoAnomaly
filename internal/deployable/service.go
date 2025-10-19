@@ -1078,8 +1078,9 @@ func (s *Service) GetMapMarkers(userID uuid.UUID, lat, lng float64) (*MapMarkers
 	}
 	markers = append(markers, hackedMarkers...)
 
-	// 4. Cudzie scannery pre scan data (do 20km) - len ak môže skenovať
-	scanDataMarkers, err := s.getScanDataScanners(userID, lat, lng, 20.0)
+	// 4. Cudzie scannery pre scan data (do 100m) - viditeľné len z veľmi blízka
+	// Radius zmenený z 20km na 0.1km (100m) pre bezpečnosť a gameplay
+	scanDataMarkers, err := s.getScanDataScanners(userID, lat, lng, 0.1)
 	if err != nil {
 		return nil, fmt.Errorf("chyba pri načítaní scannerov pre scan data: %w", err)
 	}
@@ -1232,7 +1233,8 @@ func (s *Service) getHackedScanners(userID uuid.UUID, lat, lng float64, radiusKm
 	return markers, nil
 }
 
-// getScanDataScanners - cudzie scannery pre scan data do 20km
+// getScanDataScanners - cudzie scannery pre scan data (viditeľné len z veľmi blízka)
+// Hráč musí byť veľmi blízko cudzieho scanneru aby ho videl (typicky 100m)
 func (s *Service) getScanDataScanners(userID uuid.UUID, lat, lng float64, radiusKm float64) ([]MapMarker, error) {
 	query := `
 		SELECT *, 
