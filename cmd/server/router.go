@@ -128,6 +128,11 @@ func setupRoutes(db *gorm.DB, redisClient *redis.Client, r2Client *media.R2Clien
 
 	// API v1 group
 	v1 := router.Group("/api/" + GetEnvVar("API_VERSION", "v1"))
+
+	// 🔐 Globálny TierExpirationMiddleware - kontroluje expiráciu tier pri každom authenticated requeste
+	// Middleware automaticky skipne public endpoints (keď user_id nie je v contexte)
+	v1.Use(middleware.TierExpirationMiddleware(menuHandler.GetService()))
+
 	{
 		// Basic test endpoints
 		v1.GET("/test", func(c *gin.Context) {
@@ -447,10 +452,10 @@ func setupRoutes(db *gorm.DB, redisClient *redis.Client, r2Client *media.R2Clien
 		laboratoryRoutes.Use(middleware.JWTAuth())
 		{
 			// Laboratory Management
-		laboratoryRoutes.GET("/status", laboratoryHandler.GetLaboratoryStatus)
-		laboratoryRoutes.POST("/upgrade", laboratoryHandler.UpgradeLaboratory)
-		laboratoryRoutes.GET("/upgrade/requirements/:level", laboratoryHandler.GetUpgradeRequirements)
-		laboratoryRoutes.POST("/battery/slots/purchase", laboratoryHandler.PurchaseExtraChargingSlot)
+			laboratoryRoutes.GET("/status", laboratoryHandler.GetLaboratoryStatus)
+			laboratoryRoutes.POST("/upgrade", laboratoryHandler.UpgradeLaboratory)
+			laboratoryRoutes.GET("/upgrade/requirements/:level", laboratoryHandler.GetUpgradeRequirements)
+			laboratoryRoutes.POST("/battery/slots/purchase", laboratoryHandler.PurchaseExtraChargingSlot)
 
 			// Laboratory Placement & Map
 			laboratoryRoutes.POST("/place", laboratoryHandler.PlaceLaboratory)
@@ -534,7 +539,7 @@ func setupRoutes(db *gorm.DB, redisClient *redis.Client, r2Client *media.R2Clien
 	// ==========================================
 	menuRoutes := v1.Group("/menu")
 	menuRoutes.Use(middleware.JWTAuth())
-	menuRoutes.Use(middleware.TierExpirationMiddleware(menuHandler.GetService()))
+	// TierExpirationMiddleware už je globálne na v1 group
 	{
 		// Currency endpoints
 		menuRoutes.GET("/currency/all", menuHandler.GetAllUserCurrencies)
