@@ -220,9 +220,9 @@ func setupGracefulShutdown() {
 }
 
 func initDB() (*gorm.DB, error) {
-	// Build connection string from .env
+	// Build connection string from .env with search_path for schema-based structure
 	dsn := fmt.Sprintf(
-		"host=%s user=%s password=%s dbname=%s port=%s sslmode=%s TimeZone=%s",
+		"host=%s user=%s password=%s dbname=%s port=%s sslmode=%s TimeZone=%s search_path=auth,gameplay,market,laboratory,public",
 		GetEnvVar("DB_HOST", "localhost"),
 		GetEnvVar("DB_USER", "postgres"),
 		GetEnvVar("DB_PASSWORD", ""),
