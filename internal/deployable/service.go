@@ -355,25 +355,42 @@ func (s *Service) HackDevice(hackerID uuid.UUID, deviceID uuid.UUID, req *HackRe
 		return nil, fmt.Errorf("hackovací nástroj vypršal")
 	}
 
-	// 6. Vykonať hack s meraním času
-	start := time.Now()
-	success := s.performHack(&device, &hackTool)
-	hackDuration := int(time.Since(start).Seconds())
+	// 6. Výsledok minihry z frontendu
+	// Frontend spustil minihru a poslal výsledok (success/fail)
+	success := req.MinigameSuccess
+	minigameType := req.MinigameType
+	if minigameType == "" {
+		minigameType = hackTool.ToolType // Fallback na tool type
+	}
 
-	// 7. Zaznamenať hack s skutočnými hodnotami
+	// 7. Validácia minigame duration (anti-cheat - minihra musí trvať aspoň 3 sekundy)
+	if req.MinigameDuration < 3 {
+		log.Printf("⚠️ Suspicious minigame duration: %d seconds for user %s", req.MinigameDuration, hackerID)
+		// Môžeš to odmietnuť alebo len logovaťpre monitoring
+		// return nil, fmt.Errorf("minihra musí trvať minimálne 3 sekundy")
+	}
+
+	// 8. Zaznamenať hack s minigame dátami
 	hack := DeviceHack{
-		ID:              uuid.New(),
-		DeviceID:        deviceID,
-		HackerID:        hackerID,
-		HackTime:        time.Now().UTC(),
-		Success:         success,
-		HackToolUsed:    hackTool.ToolType,
-		DistanceM:       float64(distance),
-		HackDurationSec: hackDuration,
-		CreatedAt:       time.Now().UTC(),
+		ID:               uuid.New(),
+		DeviceID:         deviceID,
+		HackerID:         hackerID,
+		HackTime:         time.Now().UTC(),
+		Success:          success,
+		HackToolUsed:     hackTool.ToolType,
+		DistanceM:        float64(distance),
+		HackDurationSec:  req.MinigameDuration, // Trvanie minihry
+		MinigameType:     minigameType,
+		MinigameScore:    req.MinigameScore,
+		MinigameDuration: req.MinigameDuration,
+		Properties:       make(map[string]any),
+		CreatedAt:        time.Now().UTC(),
 	}
 
 	s.db.Create(&hack)
+
+	log.Printf("🎮 Hack attempt: user=%s, device=%s, minigame=%s, success=%v, score=%d, duration=%ds",
+		hackerID, deviceID, minigameType, success, req.MinigameScore, req.MinigameDuration)
 
 	// Spotrebovať hack tool (atomicky znížiť UsesLeft)
 	result := s.db.Model(&HackTool{}).Where("id = ? AND uses_left > 0", hackTool.ID).UpdateColumn("uses_left", gorm.Expr("uses_left - 1"))
@@ -854,6 +871,9 @@ func (s *Service) canDetectRarity(artifactRarity, maxRarity string) bool {
 	return artifactLevel <= maxLevel
 }
 
+// performHack - DEPRECATED: Táto funkcia už nie je používaná
+// Hack úspešnosť je teraz určená minihrami vo Flutteri, nie RNG výpočtom
+// Zachované pre historické účely a možné budúce použitie (napr. AI hackery)
 func (s *Service) performHack(device *DeployedDevice, hackTool *HackTool) bool {
 	// Base success rate
 	base := 0.5 // 50% default
