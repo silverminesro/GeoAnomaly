@@ -1548,3 +1548,16 @@ func (s *Service) AttachBattery(deviceID uuid.UUID, userID uuid.UUID, req *Attac
 		Device:  &updatedDevice,
 	}, nil
 }
+
+// GetHackTools - získa hackovacie nástroje hráča
+func (s *Service) GetHackTools(userID uuid.UUID) ([]HackTool, error) {
+	var hackTools []HackTool
+	
+	if err := s.db.Where("user_id = ?", userID).Find(&hackTools).Error; err != nil {
+		return nil, fmt.Errorf("failed to retrieve hack tools: %w", err)
+	}
+	
+	log.Printf("🔧 Retrieved %d hack tools for user %s", len(hackTools), userID)
+	
+	return hackTools, nil
+}

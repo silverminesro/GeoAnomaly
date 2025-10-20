@@ -415,12 +415,16 @@ func (h *Handler) GetHackTools(c *gin.Context) {
 		return
 	}
 
-	// TODO: Implement hack tools retrieval
-	// For now, return empty list
-	_ = userUUID // Suppress unused variable warning
+	// Získať hack tools z databázy
+	hackTools, err := h.service.GetHackTools(userUUID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve hack tools"})
+		return
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"success":    true,
-		"hack_tools": []HackTool{},
+		"hack_tools": hackTools,
 	})
 }
 
