@@ -468,9 +468,9 @@ func (s *Service) HackDevice(hackerID uuid.UUID, deviceID uuid.UUID, req *HackRe
 		if err != nil {
 			return nil, err
 		}
-		
+
 		log.Printf("🎯 Abandoned device claimed via hack minigame: device=%s, new_owner=%s", deviceID, hackerID)
-		
+
 		return hackResponse, nil
 	} else {
 		// Funkčné zariadenie - prístup na 24h
@@ -1133,15 +1133,29 @@ func (s *Service) claimAbandonedDevice(hackerID uuid.UUID, deviceID uuid.UUID, h
 		// }
 
 		// 5. Aktualizovať zariadenie s novým vlastníctvom
+		// Logika: Ak má batériu → zostane vybitá (0%), ak nemá → bez batérie
+		var batteryStatus string
+		var batteryLevel int
+
+		if device.BatteryInventoryID != nil {
+			// Scanner má batériu → zostane vybitá
+			batteryStatus = "depleted"
+			batteryLevel = 0
+		} else {
+			// Scanner nemá batériu → bez batérie
+			batteryStatus = "removed"
+			batteryLevel = 0
+		}
+
 		updates := map[string]interface{}{
 			"owner_id":            hackerID,
 			"status":              DeviceStatusActive,
 			"is_active":           true,
-			"battery_level":       100,
+			"battery_level":       batteryLevel,
+			"battery_status":      batteryStatus,
 			"battery_depleted_at": nil,
 			"abandoned_at":        nil,
 			"updated_at":          time.Now().UTC(),
-			// TODO: "battery_inventory_id": newBatteryID,
 		}
 
 		if err := tx.Model(&DeployedDevice{}).Where("id = ?", deviceID).Updates(updates).Error; err != nil {
