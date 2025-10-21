@@ -1257,8 +1257,8 @@ func (s *Service) GetMapMarkers(userID uuid.UUID, lat, lng float64) (*MapMarkers
 	}
 	markers = append(markers, ownMarkers...)
 
-	// 2. Opustené scannery (do 10km) - viditeľné pre všetkých
-	abandonedMarkers, err := s.getAbandonedScanners(lat, lng, 10.0)
+	// 2. Opustené scannery (do 50m) - viditeľné pre všetkých
+	abandonedMarkers, err := s.getAbandonedScanners(lat, lng, 0.05)
 	if err != nil {
 		return nil, fmt.Errorf("chyba pri načítaní opustených scannerov: %w", err)
 	}
@@ -1362,8 +1362,7 @@ func (s *Service) getAbandonedScanners(lat, lng float64, radiusKm float64) ([]Ma
 		           ST_SetSRID(ST_MakePoint(?, ?), 4326)::geography
 		       ) / 1000.0 as distance_km
 		FROM gameplay.deployed_devices
-		WHERE status = ? 
-		  AND is_active = true
+		WHERE status = ?
 		  AND ST_DWithin(
 		      location,
 		      ST_SetSRID(ST_MakePoint(?, ?), 4326)::geography,
