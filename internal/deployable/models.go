@@ -58,7 +58,7 @@ type DeviceHack struct {
 	Success          bool              `json:"success" db:"success"`
 	HackToolUsed     string            `json:"hack_tool_used" db:"hack_tool_used"`
 	DistanceM        float64           `json:"distance_m" db:"distance_m"`
-	HackDurationSec  int               `json:"hack_duration_seconds" db:"hack_duration_seconds"`
+	HackDurationSec  int               `json:"hack_duration_seconds" db:"hack_duration_seconds" gorm:"column:hack_duration_seconds"`
 	MinigameType     string            `json:"minigame_type" db:"minigame_type"`             // Typ minihry (napr. "circuit_breaker")
 	MinigameScore    int               `json:"minigame_score" db:"minigame_score"`           // Skóre z minihry
 	MinigameDuration int               `json:"minigame_duration" db:"minigame_duration"`     // Trvanie minihry v sekundách
@@ -212,10 +212,10 @@ type ClaimRequest struct {
 	HackToolID       uuid.UUID `json:"hack_tool_id" binding:"required"`
 	Latitude         float64   `json:"latitude" binding:"required"`
 	Longitude        float64   `json:"longitude" binding:"required"`
-	MinigameSuccess  bool      `json:"minigame_success"`           // Výsledok minihry (true = úspech, false = neúspech)
-	MinigameType     string    `json:"minigame_type"`              // Typ minihry (napr. "ip_hacker")
-	MinigameScore    int       `json:"minigame_score,omitempty"`   // Skóre z minihry (voliteľné)
-	MinigameDuration int       `json:"minigame_duration"`          // Trvanie minihry v sekundách (anti-cheat)
+	MinigameSuccess  bool      `json:"minigame_success"`         // Výsledok minihry (true = úspech, false = neúspech)
+	MinigameType     string    `json:"minigame_type"`            // Typ minihry (napr. "ip_hacker")
+	MinigameScore    int       `json:"minigame_score,omitempty"` // Skóre z minihry (voliteľné)
+	MinigameDuration int       `json:"minigame_duration"`        // Trvanie minihry v sekundách (anti-cheat)
 }
 
 // ClaimResponse - response z claim zariadenia
