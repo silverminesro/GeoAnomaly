@@ -209,9 +209,13 @@ type HackRequest struct {
 
 // ClaimRequest - request na claim opusteného zariadenia
 type ClaimRequest struct {
-	HackToolID uuid.UUID `json:"hack_tool_id" binding:"required"`
-	Latitude   float64   `json:"latitude" binding:"required"`
-	Longitude  float64   `json:"longitude" binding:"required"`
+	HackToolID       uuid.UUID `json:"hack_tool_id" binding:"required"`
+	Latitude         float64   `json:"latitude" binding:"required"`
+	Longitude        float64   `json:"longitude" binding:"required"`
+	MinigameSuccess  bool      `json:"minigame_success"`           // Výsledok minihry (true = úspech, false = neúspech)
+	MinigameType     string    `json:"minigame_type"`              // Typ minihry (napr. "ip_hacker")
+	MinigameScore    int       `json:"minigame_score,omitempty"`   // Skóre z minihry (voliteľné)
+	MinigameDuration int       `json:"minigame_duration"`          // Trvanie minihry v sekundách (anti-cheat)
 }
 
 // ClaimResponse - response z claim zariadenia

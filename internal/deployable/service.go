@@ -463,8 +463,15 @@ func (s *Service) HackDevice(hackerID uuid.UUID, deviceID uuid.UUID, req *HackRe
 
 	// 6. Spracovať výsledok hacku
 	if device.Status == DeviceStatusAbandoned {
-		// Opustené zariadenie - automaticky claimnutie
-		return s.claimAbandonedDevice(hackerID, deviceID, &hackTool)
+		// Opustené zariadenie - claim s minigame (už prebehla vo Flutteri)
+		hackResponse, err := s.claimAbandonedDevice(hackerID, deviceID, &hackTool)
+		if err != nil {
+			return nil, err
+		}
+		
+		log.Printf("🎯 Abandoned device claimed via hack minigame: device=%s, new_owner=%s", deviceID, hackerID)
+		
+		return hackResponse, nil
 	} else {
 		// Funkčné zariadenie - prístup na 24h
 		return s.grantDeviceAccess(hackerID, deviceID, &hackTool)
@@ -542,28 +549,54 @@ func (s *Service) ClaimAbandonedDevice(hackerID uuid.UUID, deviceID uuid.UUID, r
 		Properties: datatypes.JSONMap(inventoryItem.Properties),
 	}
 
-	// 6. Claim zariadenie s meraním času
-	start := time.Now()
-	hackResponse, err := s.claimAbandonedDevice(hackerID, deviceID, &hackTool)
-	hackDuration := int(time.Since(start).Seconds())
+	// 6. Výsledok minihry z frontendu (rovnako ako pri hacku)
+	success := req.MinigameSuccess
+	minigameType := req.MinigameType
+	if minigameType == "" {
+		minigameType = "ip_hacker" // Default pre claim
+	}
 
+	// 7. Validácia minigame duration (anti-cheat - claim minihra max 30 sekúnd)
+	if req.MinigameDuration > 30 {
+		log.Printf("⚠️ Suspicious claim minigame duration: %d seconds (max 30s) for user %s", req.MinigameDuration, hackerID)
+		return nil, fmt.Errorf("claim minihra trvala príliš dlho (max 30s)")
+	}
+	if req.MinigameDuration < 3 {
+		log.Printf("⚠️ Suspicious claim minigame duration: %d seconds (min 3s) for user %s", req.MinigameDuration, hackerID)
+	}
+
+	// 8. Ak minihra nebola úspešná, neclaimuj
+	if !success {
+		log.Printf("❌ Claim failed - minihra neúspešná pre user %s, device %s", hackerID, deviceID)
+		return &ClaimResponse{Success: false}, nil
+	}
+
+	// 9. Claim zariadenie (minihra bola úspešná)
+	hackResponse, err := s.claimAbandonedDevice(hackerID, deviceID, &hackTool)
 	if err != nil {
 		return nil, err
 	}
 
-	// 7. Zaznamenať hack s skutočnými hodnotami
+	// 10. Zaznamenať claim pokus s minigame dátami
 	hack := DeviceHack{
-		ID:              uuid.New(),
-		DeviceID:        deviceID,
-		HackerID:        hackerID,
-		HackTime:        time.Now().UTC(),
-		Success:         hackResponse.Success,
-		HackToolUsed:    hackTool.ToolType,
-		DistanceM:       float64(distance),
-		HackDurationSec: hackDuration,
-		CreatedAt:       time.Now().UTC(),
+		ID:               uuid.New(),
+		DeviceID:         deviceID,
+		HackerID:         hackerID,
+		HackTime:         time.Now().UTC(),
+		Success:          hackResponse.Success,
+		HackToolUsed:     hackTool.ToolType,
+		DistanceM:        float64(distance),
+		HackDurationSec:  req.MinigameDuration,
+		MinigameType:     minigameType,
+		MinigameScore:    req.MinigameScore,
+		MinigameDuration: req.MinigameDuration,
+		Properties:       make(map[string]any),
+		CreatedAt:        time.Now().UTC(),
 	}
 	s.db.Create(&hack)
+
+	log.Printf("🎮 Claim attempt: user=%s, device=%s, minigame=%s, success=%v, score=%d, duration=%ds",
+		hackerID, deviceID, minigameType, success, req.MinigameScore, req.MinigameDuration)
 
 	// Spotrebovať hack tool (znížiť uses_left alebo vymazať ak 0)
 	newUsesLeft := usesLeft - 1
