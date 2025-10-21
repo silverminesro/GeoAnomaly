@@ -1138,9 +1138,22 @@ func (s *Service) claimAbandonedDevice(hackerID uuid.UUID, deviceID uuid.UUID, h
 		var batteryLevel int
 
 		if device.BatteryInventoryID != nil {
-			// Scanner má batériu → zostane vybitá
+			// Scanner má batériu → claimni ju a nastav na 0%
 			batteryStatus = "depleted"
 			batteryLevel = 0
+			
+			// ✨ Claimni batériu - zmeň owner na hackera a nastav charge na 0%
+			if err := tx.Model(&gameplay.InventoryItem{}).
+				Where("id = ?", device.BatteryInventoryID).
+				Updates(map[string]interface{}{
+					"user_id":    hackerID,
+					"properties": `{"charge_pct": 0}`,
+					"updated_at": time.Now().UTC(),
+				}).Error; err != nil {
+				return fmt.Errorf("chyba pri claimnutí batérie: %w", err)
+			}
+			
+			log.Printf("🔋 Battery claimed: %s → user %s, charge: 0%%", device.BatteryInventoryID, hackerID)
 		} else {
 			// Scanner nemá batériu → bez batérie
 			batteryStatus = "removed"
