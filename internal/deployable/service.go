@@ -11,6 +11,7 @@ import (
 	"geoanomaly/internal/gameplay"
 
 	"github.com/google/uuid"
+	"gorm.io/datatypes"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -341,18 +342,48 @@ func (s *Service) HackDevice(hackerID uuid.UUID, deviceID uuid.UUID, req *HackRe
 		return nil, fmt.Errorf("príliš ďaleko od zariadenia (%dm)", distance)
 	}
 
-	// 5. Získať a validovať hackovací nástroj
-	var hackTool HackTool
-	if err := s.db.Where("id = ? AND user_id = ?", req.HackToolID, hackerID).First(&hackTool).Error; err != nil {
-		return nil, fmt.Errorf("hackovací nástroj nebol nájdený")
+	// 5. Získať a validovať hackovací nástroj z inventory_items
+	var inventoryItem gameplay.InventoryItem
+	if err := s.db.Where("id = ? AND user_id = ? AND item_type = ? AND deleted_at IS NULL", 
+		req.HackToolID, hackerID, "hack_tool").First(&inventoryItem).Error; err != nil {
+		return nil, fmt.Errorf("hackovací nástroj nebol nájdený v inventári")
 	}
 
-	// Validovať hack tool
-	if hackTool.UsesLeft <= 0 {
+	// Extrahuj uses_left z properties
+	usesLeft := 0
+	if ul, ok := inventoryItem.Properties["uses_left"].(float64); ok {
+		usesLeft = int(ul)
+	}
+	
+	// Validovať uses_left
+	if usesLeft <= 0 {
 		return nil, fmt.Errorf("hackovací nástroj nemá žiadne zostávajúce použitia")
 	}
-	if hackTool.ExpiresAt != nil && time.Now().UTC().After(*hackTool.ExpiresAt) {
-		return nil, fmt.Errorf("hackovací nástroj vypršal")
+	
+	// Extrahuj tool_type z properties
+	toolType := "circuit_breaker" // default
+	if tt, ok := inventoryItem.Properties["tool_type"].(string); ok {
+		switch tt {
+		case "basic_hack":
+			toolType = "circuit_breaker"
+		case "advanced_hack":
+			toolType = "code_cracker"
+		case "device_claimer":
+			toolType = "stealth_infiltration"
+		case "stealth_hack":
+			toolType = "stealth_infiltration"
+		default:
+			toolType = tt
+		}
+	}
+	
+	// Vytvor HackTool štruktúru pre kompatibilitu
+	hackTool := HackTool{
+		ID:         inventoryItem.ID,
+		UserID:     inventoryItem.UserID,
+		ToolType:   toolType,
+		UsesLeft:   usesLeft,
+		Properties: datatypes.JSONMap(inventoryItem.Properties),
 	}
 
 	// 6. Výsledok minihry z frontendu
@@ -392,14 +423,28 @@ func (s *Service) HackDevice(hackerID uuid.UUID, deviceID uuid.UUID, req *HackRe
 	log.Printf("🎮 Hack attempt: user=%s, device=%s, minigame=%s, success=%v, score=%d, duration=%ds",
 		hackerID, deviceID, minigameType, success, req.MinigameScore, req.MinigameDuration)
 
-	// Spotrebovať hack tool (atomicky znížiť UsesLeft)
-	result := s.db.Model(&HackTool{}).Where("id = ? AND uses_left > 0", hackTool.ID).UpdateColumn("uses_left", gorm.Expr("uses_left - 1"))
+	// Spotrebovať hack tool (znížiť uses_left v inventory_items properties)
+	newUsesLeft := usesLeft - 1
+	if newUsesLeft < 0 {
+		newUsesLeft = 0
+	}
+	
+	// Aktualizuj uses_left v properties JSONB
+	result := s.db.Exec(`
+		UPDATE gameplay.inventory_items
+		SET properties = jsonb_set(properties, '{uses_left}', to_jsonb(?::int), true),
+		    updated_at = NOW()
+		WHERE id = ?
+	`, newUsesLeft, hackTool.ID)
+	
 	if result.Error != nil {
 		return nil, fmt.Errorf("chyba pri spotrebovaní nástroja: %w", result.Error)
 	}
 	if result.RowsAffected == 0 {
-		return nil, fmt.Errorf("nástroj už nemá žiadne použitia")
+		return nil, fmt.Errorf("nástroj už neexistuje v inventári")
 	}
+	
+	log.Printf("🔧 Hack tool consumed: %s, uses: %d → %d", hackTool.ID, usesLeft, newUsesLeft)
 
 	if !success {
 		return &HackResponse{Success: false}, nil
@@ -437,23 +482,53 @@ func (s *Service) ClaimAbandonedDevice(hackerID uuid.UUID, deviceID uuid.UUID, r
 		device.Longitude,
 	)
 
-	// 4. Validovať vzdialenosť (50m pre hack)
+	// 4. Validovať vzdialenosť (50m pre claim)
 	if distance > 50 {
 		return nil, fmt.Errorf("príliš ďaleko od zariadenia (%dm)", distance)
 	}
 
-	// 5. Získať a validovať hackovací nástroj
-	var hackTool HackTool
-	if err := s.db.Where("id = ? AND user_id = ?", req.HackToolID, hackerID).First(&hackTool).Error; err != nil {
-		return nil, fmt.Errorf("hackovací nástroj nebol nájdený")
+	// 5. Získať a validovať hackovací nástroj z inventory_items
+	var inventoryItem gameplay.InventoryItem
+	if err := s.db.Where("id = ? AND user_id = ? AND item_type = ? AND deleted_at IS NULL", 
+		req.HackToolID, hackerID, "hack_tool").First(&inventoryItem).Error; err != nil {
+		return nil, fmt.Errorf("hackovací nástroj nebol nájdený v inventári")
 	}
 
-	// Validovať hack tool
-	if hackTool.UsesLeft <= 0 {
+	// Extrahuj uses_left z properties
+	usesLeft := 0
+	if ul, ok := inventoryItem.Properties["uses_left"].(float64); ok {
+		usesLeft = int(ul)
+	}
+	
+	// Validovať uses_left
+	if usesLeft <= 0 {
 		return nil, fmt.Errorf("hackovací nástroj nemá žiadne zostávajúce použitia")
 	}
-	if hackTool.ExpiresAt != nil && time.Now().UTC().After(*hackTool.ExpiresAt) {
-		return nil, fmt.Errorf("hackovací nástroj vypršal")
+	
+	// Extrahuj tool_type z properties
+	toolType := "stealth_infiltration" // default pre claim
+	if tt, ok := inventoryItem.Properties["tool_type"].(string); ok {
+		switch tt {
+		case "basic_hack":
+			toolType = "circuit_breaker"
+		case "advanced_hack":
+			toolType = "code_cracker"
+		case "device_claimer":
+			toolType = "stealth_infiltration"
+		case "stealth_hack":
+			toolType = "stealth_infiltration"
+		default:
+			toolType = tt
+		}
+	}
+	
+	// Vytvor HackTool štruktúru pre kompatibilitu
+	hackTool := HackTool{
+		ID:         inventoryItem.ID,
+		UserID:     inventoryItem.UserID,
+		ToolType:   toolType,
+		UsesLeft:   usesLeft,
+		Properties: datatypes.JSONMap(inventoryItem.Properties),
 	}
 
 	// 6. Claim zariadenie s meraním času
@@ -479,14 +554,27 @@ func (s *Service) ClaimAbandonedDevice(hackerID uuid.UUID, deviceID uuid.UUID, r
 	}
 	s.db.Create(&hack)
 
-	// Spotrebovať hack tool (atomicky znížiť UsesLeft)
-	result := s.db.Model(&HackTool{}).Where("id = ? AND uses_left > 0", hackTool.ID).UpdateColumn("uses_left", gorm.Expr("uses_left - 1"))
+	// Spotrebovať hack tool (znížiť uses_left v inventory_items properties)
+	newUsesLeft := usesLeft - 1
+	if newUsesLeft < 0 {
+		newUsesLeft = 0
+	}
+	
+	result := s.db.Exec(`
+		UPDATE gameplay.inventory_items
+		SET properties = jsonb_set(properties, '{uses_left}', to_jsonb(?::int), true),
+		    updated_at = NOW()
+		WHERE id = ?
+	`, newUsesLeft, hackTool.ID)
+	
 	if result.Error != nil {
 		return nil, fmt.Errorf("chyba pri spotrebovaní nástroja: %w", result.Error)
 	}
 	if result.RowsAffected == 0 {
-		return nil, fmt.Errorf("nástroj už nemá žiadne použitia")
+		return nil, fmt.Errorf("nástroj už neexistuje v inventári")
 	}
+	
+	log.Printf("🔧 Hack tool consumed (claim): %s, uses: %d → %d", hackTool.ID, usesLeft, newUsesLeft)
 
 	// Convert HackResponse to ClaimResponse
 	return &ClaimResponse{
@@ -1549,15 +1637,65 @@ func (s *Service) AttachBattery(deviceID uuid.UUID, userID uuid.UUID, req *Attac
 	}, nil
 }
 
-// GetHackTools - získa hackovacie nástroje hráča
+// GetHackTools - získa hackovacie nástroje hráča z inventory_items
 func (s *Service) GetHackTools(userID uuid.UUID) ([]HackTool, error) {
-	var hackTools []HackTool
+	var inventoryItems []gameplay.InventoryItem
 	
-	if err := s.db.Where("user_id = ?", userID).Find(&hackTools).Error; err != nil {
-		return nil, fmt.Errorf("failed to retrieve hack tools: %w", err)
+	// Načítaj hack tools z inventory_items (nie z hack_tools tabuľky!)
+	if err := s.db.Where("user_id = ? AND item_type = ? AND deleted_at IS NULL", 
+		userID, "hack_tool").Find(&inventoryItems).Error; err != nil {
+		return nil, fmt.Errorf("failed to retrieve hack tools from inventory: %w", err)
 	}
 	
-	log.Printf("🔧 Retrieved %d hack tools for user %s", len(hackTools), userID)
+	// Konvertuj inventory items na HackTool štruktúru
+	var hackTools []HackTool
+	for _, item := range inventoryItems {
+		// Extrahuj uses_left z properties
+		usesLeft := 0
+		if ul, ok := item.Properties["uses_left"].(float64); ok {
+			usesLeft = int(ul)
+		}
+		
+		// Extrahuj tool_type z properties (mapuj na povolené typy pre DB constraint)
+		toolType := "circuit_breaker" // default
+		if tt, ok := item.Properties["tool_type"].(string); ok {
+			// Mapovanie: basic_hack → circuit_breaker, advanced_hack → code_cracker, atď.
+			switch tt {
+			case "basic_hack":
+				toolType = "circuit_breaker"
+			case "advanced_hack":
+				toolType = "code_cracker"
+			case "device_claimer":
+				toolType = "stealth_infiltration"
+			case "stealth_hack":
+				toolType = "stealth_infiltration"
+			default:
+				toolType = tt // Použij ako je (ak je už mapované)
+			}
+		}
+		
+		// Extrahuj name z properties
+		name := "Unknown Hack Tool"
+		if n, ok := item.Properties["name"].(string); ok {
+			name = n
+		} else if dn, ok := item.Properties["display_name"].(string); ok {
+			name = dn
+		}
+		
+		hackTools = append(hackTools, HackTool{
+			ID:         item.ID,
+			UserID:     item.UserID,
+			ToolType:   toolType,
+			Name:       name,
+			UsesLeft:   usesLeft,
+			ExpiresAt:  nil, // Hack tools z marketu nevypršavajú
+			Properties: datatypes.JSONMap(item.Properties),
+			CreatedAt:  item.CreatedAt,
+			UpdatedAt:  item.UpdatedAt,
+		})
+	}
+	
+	log.Printf("🔧 Retrieved %d hack tools from inventory for user %s", len(hackTools), userID)
 	
 	return hackTools, nil
 }
