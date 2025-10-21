@@ -568,6 +568,43 @@ func (s *Service) ClaimAbandonedDevice(hackerID uuid.UUID, deviceID uuid.UUID, r
 	// 8. Ak minihra nebola úspešná, neclaimuj
 	if !success {
 		log.Printf("❌ Claim failed - minihra neúspešná pre user %s, device %s", hackerID, deviceID)
+		
+		// ✨ Odpocítaj uses_left aj pri FAILED claim
+		usesLeft := 0
+		if ul, ok := hackTool.Properties["uses_left"].(float64); ok {
+			usesLeft = int(ul)
+		}
+		
+		newUsesLeft := usesLeft - 1
+		if newUsesLeft < 0 {
+			newUsesLeft = 0
+		}
+		
+		var result *gorm.DB
+		if newUsesLeft == 0 {
+			// Ak uses_left dosiahne 0, vymaž item z inventára (soft delete)
+			result = s.db.Exec(`
+				UPDATE gameplay.inventory_items
+				SET deleted_at = NOW(),
+					updated_at = NOW()
+				WHERE id = ?
+			`, hackTool.ID)
+			log.Printf("🗑️ Claim tool deleted (uses depleted, failed): %s, uses: %d → 0 (deleted)", hackTool.ID, usesLeft)
+		} else {
+			// Inak len zníž uses_left
+			result = s.db.Exec(`
+				UPDATE gameplay.inventory_items
+				SET properties = jsonb_set(properties, '{uses_left}', to_jsonb(?::int), true),
+					updated_at = NOW()
+				WHERE id = ?
+			`, newUsesLeft, hackTool.ID)
+			log.Printf("🔧 Claim tool consumed (failed): %s, uses: %d → %d", hackTool.ID, usesLeft, newUsesLeft)
+		}
+		
+		if result.Error != nil {
+			log.Printf("❌ Chyba pri spotrebovaní claim tool: %v", result.Error)
+		}
+		
 		return &ClaimResponse{Success: false}, nil
 	}
 
