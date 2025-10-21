@@ -1606,6 +1606,45 @@ func (s *Service) mintItemToInventory(tx *gorm.DB, userID uuid.UUID, marketItem 
 		"purchased_from": "market",
 	}
 
+	// ✨ Pridaj uses_left a tool_type pre hack tools
+	if itemType == "hack_tool" {
+		// Extrahuj uses z market item properties
+		if marketItem.Properties != nil {
+			if uses, ok := marketItem.Properties["uses"]; ok {
+				properties["uses_left"] = uses
+			} else {
+				properties["uses_left"] = 1 // default 1 použitie
+			}
+
+			if toolType, ok := marketItem.Properties["tool_type"]; ok {
+				properties["tool_type"] = toolType
+			} else {
+				properties["tool_type"] = "basic_hack" // default
+			}
+
+			// Skopíruj ostatné relevantné properties z market item
+			if successRate, ok := marketItem.Properties["success_rate"]; ok {
+				properties["success_rate"] = successRate
+			}
+			if hackTime, ok := marketItem.Properties["hack_time_seconds"]; ok {
+				properties["hack_time_seconds"] = hackTime
+			}
+		} else {
+			// Fallback ak market item nemá properties
+			properties["uses_left"] = 1
+			properties["tool_type"] = "basic_hack"
+		}
+
+		log.Printf("🔧 [MARKET PURCHASE] Hack Tool Created:")
+		log.Printf("  → User ID: %s", userID)
+		log.Printf("  → Name: %s", marketItem.Name)
+		log.Printf("  → Tool Type: %v", properties["tool_type"])
+		log.Printf("  → Uses Left: %v", properties["uses_left"])
+		log.Printf("  → Level: %v", properties["level"])
+		log.Printf("  → Rarity: %v", properties["rarity"])
+		log.Printf("  → Market Item ID: %s", marketItem.ID)
+	}
+
 	// Zvoliť správny ItemID pre klientské mapovanie (katalóg > market)
 	itemID := marketItem.ID
 	if marketItem.IsScannerItem() && marketItem.ScannerCatalogID != nil {
